@@ -1,0 +1,10 @@
+*.whl
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+artifacts/
+temp-workspace/
+build/
+*.egg-info/

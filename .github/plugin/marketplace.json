@@ -1,0 +1,20 @@
+{
+  "name": "xstorecopilot-plugins",
+  "metadata": {
+    "description": "XStoreCopilot agent plugins",
+    "version": "1.0.0"
+  },
+  "owner": {
+    "name": "XAIOps",
+    "email": "xaiops@microsoft.com"
+  },
+  "plugins": [
+    {
+      "name": "sibylagent",
+      "source": "../../plugins/sibylagent",
+      "description": "AI agent for XStore test infrastructure — investigates failures, analyzes TE/DF logs, finds root cause.",
+      "version": "1.0.0",
+      "skills": ["./skills/test-investigation"]
+    }
+  ]
+}

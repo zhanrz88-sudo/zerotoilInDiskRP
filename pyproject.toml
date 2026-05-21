@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zerotoil"
+# Version is stamped dynamically by build_and_upload_package.py before each
+# build.  Every build produces a unique PEP 440 dev version such as
+# 0.0.1.dev20260413150042a1b2c3d4  (timestamp + 8-char uuid).
+# Do NOT rely on version ordering — each build is an independent snapshot.
+version = "0.0.0"
+description = "ZeroToil – automated TSG execution framework for XStore"
+requires-python = ">=3.10"
+dependencies = [
+    "asyncio==4.0.0",
+    "aiohttp==3.13.3",
+    "ipython==8.4.0",
+    "azure-identity==1.16.1",
+    "azure-keyvault-secrets==4.8.0",
+    "azure-kusto-ingest==4.4.0",
+    "azure-kusto-data==4.4.0",
+    "pandas==2.2.1",
+    "numpy==1.26.4",
+    "azure-storage-blob==12.25.1",
+    "azure-storage-queue==12.12.0",
+    "pydantic==2.10.1",
+    "beautifulsoup4==4.14.3",
+    "selenium==4.43.0",
+    "markdown==3.10",
+    # Internal packages from Storage-XI-feed (no public PyPI equivalents)
+    "xportal",
+    "xds-client",
+    "xstore",
+    "xaiops",
+    "xrhc",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+dev = [
+    "build>=1.2",
+    "twine>=5.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["zerotoil*"]
+
+# ── Pytest configuration ─────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unittest: Unit tests — no external dependencies, all APIs mocked. Run in CI.",
+    "integrationtest: Integration tests — require access to internal APIs (XPortal, XDS, DGrep).",
+    "e2etest: End-to-end tests — run a full TSG against a live or staged incident.",
+]
+# CI runs only unit tests by default; override with: pytest -m integrationtest
+addopts = "-m unittest"

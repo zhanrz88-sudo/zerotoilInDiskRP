@@ -1,0 +1,692 @@
+Nodes:
+  Storage_FC8_NodeRecoveryTimeout:
+    Description: |
+      TSG for Fault Code 8 - Node Recovery Exceeded Recovery Time Threshold.
+      Nodes fall into HI with FC8 if a recovery operation exceeds a certain threshold (default 3600 seconds).
+      FC8 is one of the more "generic" fault codes and nodes with FC8 are typically the least likely
+      to respond to further repair attempts. The repair steps are presented in increasing order of
+      complexity and probability of being the cause.
+      FaultCodeString: NodeRecoveryExceededRecoveryTimeThreshold
+      FaultType: Software | FabricOperation: NodeRecovery
+      This TSG is owned by XSSE and DD Hardware Support V-team.
+      IMPORTANT: A node recovered to Ready state is NOT guaranteed to be healthy per Direct Drive service.
+      BSS nodes may take an additional 15-45 minutes to resume heartbeating after reaching Ready state.
+      If a node reaches Ready but remains unhealthy from Direct Drive perspective, check the
+      Role Cycling Investigations TSG.
+
+    Notes:
+      OriginalTSG: "https://eng.ms/docs/cloud-ai-platform/azure-core/azure-storage/directdrive/azure-direct-drive/azure-direct-drive-documents/tsg/noderepairs/humaninvestigatefaults/fc8noderecoverytimeout"
+      Ownership: "Xstore Sustained Engineering Team (XSSE) and DD Hardware Support V-team"
+      R2DExemption: "PBI 30450086: [R2D Exemption Request] Direct Drive: Node-level actions at lower level below Storage MR control (FTE-only operations)"
+      FaultCode: "8"
+      FaultCodeString: "NodeRecoveryExceededRecoveryTimeThreshold"
+      FaultType: "Software"
+      FabricOperation: "NodeRecovery"
+      DefaultTimeout: "3600 seconds"
+      RelatedFaultCodes: "FC10033"
+      KnownBadPfAgentVersion: "< 132.879.3974.3"
+      RelatedIncidents: "433274587 (Bootstrap/ApSvcMgr), 486947558 (PfAgent), 477138356 (PolicyEngine)"
+      RelatedTSGs: "HI Faults Overview, Role Cycling Investigations, Check Node Switch Port Status SOP, Check Node SAC Connection SOP, Send Node OFR SOP, Boot Node To MOS TSG, DCM Explorer TSG, PfAgent Logs TSG, Bootstrap32 Operational Guide, Escalation Procedures for Node Recovery TSG"
+      TranslatedFrom: "Storage_FC8_NodeRecoveryTimeout.yaml (manual portal/FcShell version)"
+      TranslationMethod: "ga-translation-layer coding ability"
+
+    LLM_Discoverable: True
+
+    InputPreprocessing:
+      - ParamsInferAction:
+          InferFrom: |
+            py|'\n\n'.join([d for d in self.outputs['icm_info_dict']['text_discussions'] if any(kw in d.lower() for kw in ['nodeid', 'node id', 'tenantname', 'tenant name', 'fc8', 'faultcode 8', 'noderecovery', 'recovery timeout', 'humaninvestigate'])])
+          Parameters:
+            NodeId:
+              Type: str
+              Description: |
+                NodeId is a GUID string identifying the Azure node in HI with fault code 8.
+                Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                Example: 15824669-8356-48e0-f4f6-9f7589525a76
+            TenantName:
+              Type: str
+              Description: |
+                TenantName is a string representing the Azure Storage tenant name
+                that contains the node with FC8.
+
+    Input:
+      incidentId: "py|self.inputs['incidentId'] if 'incidentId' in self.inputs else input('Please enter the incidentId (e.g. 552999691): ')"
+      NodeId: "py|self.inputs.get('NodeId', None) or input('Please enter the NodeId (GUID, e.g. 15824669-8356-48e0-f4f6-9f7589525a76): ')"
+      TenantName: "py|self.inputs.get('TenantName', None) or input('Please enter the TenantName: ')"
+
+    Steps:
+      - PyCodeAction:
+          Description: Initialize diagnostic process and display FC8 background information
+          Code: |
+            tsg_link = "https://eng.ms/docs/cloud-ai-platform/azure-core/azure-storage/directdrive/azure-direct-drive/azure-direct-drive-documents/tsg/noderepairs/humaninvestigatefaults/fc8noderecoverytimeout"
+            self.outputs['fc8_diag'] = DiagnosticProcess("FC8 - Node Recovery Exceeded Recovery Time Threshold", self.inputs['incidentId'], tsg_link)
+            case_ids = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"]
+            }
+            self.outputs['fc8_diag'].add_case(case_ids)
+
+            print("=== FC8 - Node Recovery Exceeded Recovery Time Threshold ===")
+            print()
+            print(f"NodeId: {self.inputs['NodeId']}")
+            print(f"TenantName: {self.inputs['TenantName']}")
+            print()
+            print("Background:")
+            print("  FaultCodeString: NodeRecoveryExceededRecoveryTimeThreshold")
+            print("  FaultType: Software | FabricOperation: NodeRecovery")
+            print("  Default timeout: 3600 seconds")
+            print()
+            print("  FC8 is one of the more 'generic' fault codes. The specific threshold varies")
+            print("  depending on the type of recovery operation, and there are many types of recovery")
+            print("  operations. Because of this, nodes with FC8 are typically the LEAST LIKELY to")
+            print("  respond to further repair attempts.")
+            print()
+            print("IMPORTANT: A node recovered to Ready state is NOT guaranteed to be healthy per")
+            print("  Direct Drive service. BSS nodes may take an additional 15-45 minutes to resume")
+            print("  heartbeating. If the node reaches Ready but continues to be unhealthy from a")
+            print("  Direct Drive perspective, check the Role Cycling Investigations TSG.")
+            print()
+            print("Repair steps below are in INCREASING order of complexity. Stop when one resolves the issue.")
+
+      - KustoQueryAction:
+          Description: Confirm FC8 on the node by querying fabric health state
+          Label: fc8_node_fabric_health_df
+          Cluster: https://xsse.westcentralus.kusto.windows.net
+          Database: xssedb
+          Query: |
+            GetAllStorageNodeFabricHealth
+            | where NodeId contains "{NodeId}"
+            | project ClusterId, Tenant, NodeId, TMState, DCMState, HIFault, HIFaultReason, OFRFaultCode, OFRFaultReason
+
+      - PyCodeAction:
+          Description: Analyze node fabric health and confirm FC8 status
+          Code: |
+            df = self.outputs['fc8_node_fabric_health_df'].df
+            if df.empty:
+              self.outputs['NodeFound'] = False
+              result = "Node not found in GetAllStorageNodeFabricHealth. Verify NodeId is correct."
+            else:
+              row = df.iloc[0]
+              tm_state = str(row.get('TMState', ''))
+              hi_fault = str(row.get('HIFault', ''))
+              ofr_fault = str(row.get('OFRFaultCode', ''))
+              cluster_id = str(row.get('ClusterId', ''))
+
+              self.outputs['NodeFound'] = True
+              self.outputs['TMState'] = tm_state
+              self.outputs['ClusterId'] = cluster_id
+              self.outputs['HIFault'] = hi_fault
+
+              if hi_fault == '8':
+                result = f"CONFIRMED: Node is in HI with FC8. TMState={tm_state}, ClusterId={cluster_id}"
+              elif ofr_fault == '8':
+                result = f"Node is in OFR with FC8. TMState={tm_state}, ClusterId={cluster_id}"
+              else:
+                result = f"Node found but fault code is not 8. HIFault={hi_fault}, OFRFaultCode={ofr_fault}, TMState={tm_state}"
+
+            self.outputs['fc8_status'] = result
+            print(result)
+            self.outputs['fc8_diag'].add_kusto_step(self.outputs['fc8_node_fabric_health_df'], result)
+
+      - JumpOutAction:
+          Description: Jump out if node is not found in fabric health data
+          ShouldJumpOut: "py|not self.outputs['NodeFound']"
+          JumpTo: Storage_FC8_NodeNotFound
+          InitCode: |
+            self.inputs['TriageMessage'] = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"],
+              "Status": "Node not found in GetAllStorageNodeFabricHealth",
+              "Action": "Verify NodeId and TenantName are correct"
+            }
+
+      # === GA TRANSLATION: Step 1 - Check switch port status (was manual SOP reference) ===
+      # Original: PyCodeAction printing "Follow the Check Node Switch Port Status SOP"
+      # Translation: GenevaAction to check switch port status, then PyCodeAction to analyze results
+      - GenevaAction:
+          Description: "Step 1 - Check switch port isolation and link state"
+          OperationId: GetSwitchPortStatusDelegated
+          Extension: Xstore
+          OperationGroup: DirectDriveDelegatedSafe
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: false
+          RequiresApproval: false
+          Label: fc8_switch_port_status
+
+      - PyCodeAction:
+          Description: Analyze switch port status and determine if port needs to be enabled
+          Code: |
+            result = self.outputs.get('fc8_switch_port_status', {})
+            print("=== Step 1: Network Connectivity Check ===")
+            print()
+            # Parse the GA result for port isolation and link state
+            result_str = str(result)
+            port_ok = 'Enable' in result_str or 'enabled' in result_str.lower()
+            link_ok = 'Connected' in result_str or 'connected' in result_str.lower()
+
+            if port_ok and link_ok:
+              self.outputs['NetworkOk'] = True
+              print("Port Isolation State: Enabled ✓")
+              print("Link Active State: Connected ✓")
+              print("Network connectivity confirmed. Proceeding to Step 2.")
+            else:
+              self.outputs['NetworkOk'] = False
+              if not port_ok:
+                print("Port Isolation State: NOT Enabled — will attempt to enable via GA")
+              if not link_ok:
+                print("Link Active State: NOT Connected — node may need OFR")
+                print("If link is disconnected, consider sending node to OFR (Step 8)")
+
+            print()
+            print("NOTE: Even if port and link are connected/enabled, that does NOT guarantee")
+            print("the node has a good network connection. Other HW/SW components may be faulted.")
+            self.outputs['fc8_diag'].add_step("Step 1 - Switch Port Check", result_str)
+
+      - GenevaAction:
+          Description: "Step 1b - Enable switch port if it was disabled (only if port was not enabled)"
+          Condition: "py|not self.outputs.get('NetworkOk', True)"
+          OperationId: EnableSwitchPortIsolationDelegated
+          Extension: Xstore
+          OperationGroup: DirectDriveDelegatedSafe
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_enable_switch_port_result
+
+      # === GA TRANSLATION: Step 2 - Check SAC connection (was manual SOP reference) ===
+      # Original: PyCodeAction printing "Follow the Check Node SAC Connection SOP"
+      # Translation: GenevaAction to check SAC connectivity
+      - GenevaAction:
+          Description: "Step 2 - Check SAC connection to verify node responsiveness"
+          OperationId: CheckSACConnectionDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: false
+          RequiresApproval: false
+          Label: fc8_sac_connection_result
+
+      - PyCodeAction:
+          Description: Analyze SAC connection result and determine if node is responsive
+          Code: |
+            result = self.outputs.get('fc8_sac_connection_result', {})
+            result_str = str(result)
+            print("=== Step 2: SAC Responsiveness Check ===")
+            print()
+            print(f"SAC Connection Result: {result_str}")
+            print()
+            sac_ok = 'success' in result_str.lower() or 'connected' in result_str.lower()
+            self.outputs['SACResponsive'] = sac_ok
+            if sac_ok:
+              print("SAC is responsive. Proceeding to Step 3 (Simple Recovery).")
+            else:
+              print("SAC is NOT responsive. The node almost certainly needs to go to OFR.")
+              print("Consider skipping to Step 8 (Send Node to OFR).")
+            self.outputs['fc8_diag'].add_step("Step 2 - SAC Check", result_str)
+
+      # === GA TRANSLATION: Step 3 - Power cycle + Reset health (was manual SOP references) ===
+      # Original: PyCodeAction printing "Use Node Power Operations SOP" and "Use Reset Node Health SOP"
+      # Translation: Two GenevaAction steps — power cycle then reset health
+      - PyCodeAction:
+          Description: "Step 3 - Simple Recovery preamble"
+          Code: |
+            print("=== Step 3: Simple Recovery (Power Cycle + Reset Health) ===")
+            print()
+            print("Baseline: Node should be responsive via SAC and connected to the network.")
+            print("Although FC8 is typically difficult to recover, some situations are easily repaired")
+            print("(e.g., rack/TOR was temporarily faulted/lost power but the node itself is fine).")
+            print()
+            print("Attempting: A) Power cycle the node, then B) Reset node health.")
+
+      - GenevaAction:
+          Description: "Step 3A - Power cycle the node"
+          OperationId: PowerNodeCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            clusterName: ""
+            nodeId: "{NodeId}"
+            powerAction: "PowerCycle"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+            shouldSkipSafetyChecks: "false"
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_power_cycle_result
+          Timeout: 600
+
+      - GenevaAction:
+          Description: "Step 3B - Reset node health after power cycle"
+          OperationId: ResetNodeHealthCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            shouldSkipSafetyChecks: "false"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_reset_health_result
+          Timeout: 300
+
+      - PyCodeAction:
+          Description: Log Step 3 results and check if node recovered
+          Code: |
+            print(f"Power Cycle result: {self.outputs.get('fc8_power_cycle_result', 'N/A')}")
+            print(f"Reset Health result: {self.outputs.get('fc8_reset_health_result', 'N/A')}")
+            print()
+            print("If the node recovers to Ready/Healthy state -> repair is complete.")
+            print("If not, proceed to Step 4.")
+            self.outputs['fc8_diag'].add_step("Step 3 - Power Cycle + Reset Health",
+              f"PowerCycle={self.outputs.get('fc8_power_cycle_result','N/A')}, ResetHealth={self.outputs.get('fc8_reset_health_result','N/A')}")
+
+      # === GA TRANSLATION: Step 4 - Boot into MOS + Redeploy FullOS (was DCM Explorer / FcShell) ===
+      # Original: PyCodeAction with DCM Explorer instructions and "FcShell or DCM Explorer per Return to FullOS"
+      # Translation: GenevaAction for MOS boot + GenevaAction for FullOS redeploy (ReimageOS)
+      - PyCodeAction:
+          Description: "Step 4 preamble - Boot node in and out of MOS"
+          Code: |
+            print("=== Step 4: Boot the Node in and out of MOS ===")
+            print()
+            print("R2D Exemption: PBI 30450086 (FTE-only operations)")
+            print(f"Cluster: {self.outputs.get('ClusterId', '<cluster>')}")
+            print(f"NodeId: {self.inputs['NodeId']}")
+            print()
+            print("Step 4.1: Boot node into MOS via Geneva Action")
+            print("Step 4.2: Optional power cycle while in MOS")
+            print("Step 4.3: Redeploy FullOS via Geneva Action (replaces FcShell 'Return to FullOS')")
+
+      - GenevaAction:
+          Description: "Step 4.1 - Boot the node into MOS"
+          OperationId: PutNodeIntoMOSCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            clusterName: "py|self.outputs.get('ClusterId', '')"
+            tenantInCluster: "{TenantName}"
+            nodeId: "{NodeId}"
+            mosWim: ""
+            shouldSkipSafetyChecks: "false"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_mos_boot_result
+          Timeout: 600
+
+      - GenevaAction:
+          Description: "Step 4.2 - Optional power cycle while in MOS"
+          OperationId: PowerNodeCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            clusterName: ""
+            nodeId: "{NodeId}"
+            powerAction: "PowerCycle"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+            shouldSkipSafetyChecks: "false"
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_mos_power_cycle_result
+          Timeout: 600
+          Notes: |
+            Optional step. If specific repair actions have been prescribed for this node
+            while in MOS, perform those instead of a simple reboot.
+
+      # === GA TRANSLATION: "FcShell or DCM Explorer per Return to FullOS" → RedeployOS GA ===
+      - GenevaAction:
+          Description: "Step 4.3 - Redeploy FullOS (replaces FcShell/DCM Explorer 'Return to FullOS')"
+          OperationId: RedeployOSCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_redeploy_os_result
+          Timeout: 600
+
+      - PyCodeAction:
+          Description: Monitor recovery progress after MOS cycle and FullOS redeploy
+          Code: |
+            print("=== Step 4 Results ===")
+            print(f"MOS Boot: {self.outputs.get('fc8_mos_boot_result', 'N/A')}")
+            print(f"MOS Power Cycle: {self.outputs.get('fc8_mos_power_cycle_result', 'N/A')}")
+            print(f"FullOS Redeploy: {self.outputs.get('fc8_redeploy_os_result', 'N/A')}")
+            print()
+            print("Monitor the node's recovery progress:")
+            print("  - If Ready/Healthy -> repair is complete")
+            print("  - If falls back to HI with a NEW fault (not FC8 or FC10033):")
+            print("    Follow the appropriate TSG for the new fault code (see HI Faults Overview)")
+            print("  - If falls back to HI with FC8 or FC10033:")
+            print("    Likely stuck in a never-ending loop -> proceed to Step 5")
+            self.outputs['fc8_diag'].add_step("Step 4 - MOS Boot + Redeploy FullOS",
+              f"MOS={self.outputs.get('fc8_mos_boot_result','N/A')}, Redeploy={self.outputs.get('fc8_redeploy_os_result','N/A')}")
+
+      - PyCodeAction:
+          Description: Step 5 - Investigate Bootstrap Stack for boot-preventing issues
+          Code: |
+            print("=== Step 5: Investigate Bootstrap Stack ===")
+            print()
+            print("If the node has not recovered, check if there is a problem in the Bootstrap stack")
+            print("preventing the node from booting properly.")
+            print()
+            print("The Bootstrap stack is the collection of all applications and services involved in")
+            print("booting a node to the point at which RdAgent can begin starting the Direct Drive roles.")
+            print()
+            print("Diagnostic steps:")
+            print("  1. Begin with the Workflow document (Bootstrap32 Operational Guide)")
+            print("     It guides through a series of checks to determine where the problem is")
+            print("     and which team is responsible")
+            print()
+            print("  2. Most helpful sections for Direct Drive nodes:")
+            print("     - Status of Bootstrap Services")
+            print("     - Verify Status of ApSvcManager on an Azure Node")
+            print()
+            print("  3. If problems found in bootstrap stack, try:")
+            print("     -> Delete OS images while in MOS (Step 6)")
+            print("     Deleting OS images and redeploying FullOS can sometimes get the agent")
+            print("     or bootstrap stack unstuck")
+            print()
+            print("Example incident: 433274587 - Direct Drive Nodes Fail to Boot Due to ApSvcMgr Not Running")
+            print()
+            print("IMPORTANT: If multiple nodes are stuck in FC8 showing Bootstrap stack errors")
+            print("and they are fixed by deleting OS images, there may be a SYSTEMIC PROBLEM.")
+            print("In that case:")
+            print("  - Continue applying effective repair steps for individual nodes")
+            print("  - ALSO follow Step 7 (Escalate to Another Team) in parallel")
+            print("  - Systemic causes of FC8 typically take a long time to root-cause and fix,")
+            print("    but nodes still need to be recovered to prevent blocking deployments and MR jobs")
+
+      # === GA TRANSLATION: Step 6 - Delete OS images (was PfAgent Shell + DCM Explorer) ===
+      # Original: PyCodeAction with manual PfAgent shell instructions (cd C:\OS, del *)
+      # Translation: GenevaAction for MOS boot + GenevaAction for DelOSImages + GenevaAction for FullOS redeploy
+      # NOTE: DelOSImagesOaaS is DD/OaaS only. The PfAgent Shell interactive method has no full GA equivalent.
+      # Split into GA steps for the automatable parts + annotation for the gap.
+      - PyCodeAction:
+          Description: "Step 6 preamble - Delete OS images while in MOS"
+          Code: |
+            print("=== Step 6: Delete OS Images while in MOS ===")
+            print()
+            print("Sometimes deleting the node's OS images while in MOS can recover the node.")
+            print("In most cases where this is successful, there is something wrong with PfAgent")
+            print("and deleting the OS images forces the agent to completely restart and get past")
+            print("whatever was blocking it.")
+            print()
+            print("Steps: 1) Boot into MOS, 2) Delete OS images via GA, 3) Redeploy FullOS")
+
+      - GenevaAction:
+          Description: "Step 6.1 - Boot the node into MOS (if not already in MOS)"
+          OperationId: PutNodeIntoMOSCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            clusterName: "py|self.outputs.get('ClusterId', '')"
+            tenantInCluster: "{TenantName}"
+            nodeId: "{NodeId}"
+            mosWim: ""
+            shouldSkipSafetyChecks: "false"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_step6_mos_result
+          Timeout: 600
+
+      - GenevaAction:
+          Description: "Step 6.2 - Delete OS images on the node (replaces PfAgent Shell 'cd C:\\OS; del *')"
+          OperationId: DeleteOSVhdOrAgentPackagesCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            fileDeletionType: "OSVhd"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_delete_os_images_result
+          Timeout: 600
+          Notes: |
+            This replaces the manual PfAgent Shell steps:
+              1) Connect to node via PfAgent in DCM Explorer
+              2) Open Shell tab, click Connect
+              3) cd C:\OS
+              4) del *
+            The GA handles this without requiring interactive shell access.
+
+      - GenevaAction:
+          Description: "Step 6.3 - Redeploy FullOS after deleting OS images"
+          OperationId: RedeployOSCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_step6_redeploy_result
+          Timeout: 600
+
+      - PyCodeAction:
+          Description: Monitor recovery progress after OS image deletion and FullOS redeploy
+          Code: |
+            print("=== Step 6 Results ===")
+            print(f"MOS Boot: {self.outputs.get('fc8_step6_mos_result', 'N/A')}")
+            print(f"Delete OS Images: {self.outputs.get('fc8_delete_os_images_result', 'N/A')}")
+            print(f"FullOS Redeploy: {self.outputs.get('fc8_step6_redeploy_result', 'N/A')}")
+            print()
+            print("Monitor recovery. If not recovered -> proceed to Step 7.")
+
+      - KustoQueryAction:
+          Description: Step 7 - Query PfAgent version to identify known-bad versions before escalation
+          Label: fc8_pfagent_version_df
+          Cluster: https://azuredcm.kusto.windows.net
+          Database: AzureDCMDb
+          Query: |
+            RdmResourceProperty
+            | where Property has "PFAgent.Version"
+                and PreciseTimeStamp >= ago(1d)
+                and ResourceId == "{NodeId}"
+            | summarize arg_max(PreciseTimeStamp, *) by ResourceId
+            | project PfAgentVersion=Value, NodeId=ResourceId, ClusterName=AzureCluster, PreciseTimeStamp
+
+      - PyCodeAction:
+          Description: Analyze PfAgent version and provide escalation guidance for Step 7
+          Code: |
+            df = self.outputs['fc8_pfagent_version_df'].df
+            pfagent_version = "Unknown"
+            is_known_bad = False
+
+            if not df.empty:
+              pfagent_version = str(df.iloc[0].get('PfAgentVersion', 'Unknown'))
+              cluster_name = str(df.iloc[0].get('ClusterName', 'Unknown'))
+              print(f"PfAgent Version: {pfagent_version}")
+              print(f"Cluster: {cluster_name}")
+
+              # Check against known-bad version threshold: < 132.879.3974.3
+              try:
+                version_parts = pfagent_version.split('.')
+                if len(version_parts) >= 4:
+                  major, minor, build, rev = int(version_parts[0]), int(version_parts[1]), int(version_parts[2]), int(version_parts[3])
+                  threshold = (132, 879, 3974, 3)
+                  current = (major, minor, build, rev)
+                  if current < threshold:
+                    is_known_bad = True
+              except (ValueError, IndexError):
+                pass
+            else:
+              print("PfAgent version not found in RdmResourceProperty. Node may not be reporting.")
+
+            self.outputs['PfAgentVersion'] = pfagent_version
+            self.outputs['IsKnownBadPfAgent'] = is_known_bad
+            self.outputs['fc8_diag'].add_kusto_step(self.outputs['fc8_pfagent_version_df'],
+              f"PfAgent version: {pfagent_version}, Known-bad: {is_known_bad}")
+
+            print()
+            print("=== Step 7: Escalate to Another Team ===")
+            print()
+
+            if is_known_bad:
+              print(f"WARNING: PfAgent version {pfagent_version} is OLDER than the known-bad threshold 132.879.3974.3")
+              print("There are known problems with PfAgent versions older than 132.879.3974.3 that")
+              print("sometimes (but not always) cause FC8.")
+              print()
+              print("The Titan Agents Team (owns PfAgent) is aware and working on deploying a new version.")
+              print()
+              print("ACTION: Do NOT waste further time trying to RCA. Instead:")
+              print("  1. Follow 'Delete OS images while in MOS' steps (Step 6) as a workaround")
+              print("  2. Wait for the new PfAgent version to be deployed")
+              print()
+              print("Example incident: 486947558 - Deploy Latest PfAgent to Azure Direct Drive (SDF) Clusters")
+            else:
+              print(f"PfAgent version {pfagent_version} is at or above the known-bad threshold 132.879.3974.3")
+              print("PfAgent version alone does not explain FC8.")
+
+            print()
+            print("If many nodes from multiple clusters are in a similar state, compile evidence for investigation.")
+            print()
+            print("Next steps for escalation:")
+            print("  1. Obtain the three most recent PfAgent log files (PfAgent Logs TSG)")
+            print("  2. Analyze the PfAgent logs:")
+            print("     - If problem is with PfAgent itself -> escalate to Titan Agents Team")
+            print()
+            print("  NOTE: PfAgent is not always the cause of FC8. Other known causes:")
+            print("  - PolicyEngine bug (Incident 477138356): prevented PlatformInitiated repairs from being")
+            print("    created, so nodes could not generate reboot jobs, causing them to land in FC8")
+            print()
+            print("If no systemic cause is found -> proceed to Step 8.")
+
+      # === GA TRANSLATION: Step 8 - Send node to OFR (was manual SOP reference) ===
+      # Original: PyCodeAction printing "Follow the Send Node OFR SOP"
+      # Translation: GenevaAction to request OFR
+      - GenevaAction:
+          Description: "Step 8 - Send node to OFR as last resort for potential hardware issue"
+          OperationId: RequestOFRFromMRWithOverride
+          Extension: Xstore
+          OperationGroup: SustainabilitySafe
+          Parameters:
+            tenantName: "{TenantName}"
+            nodeId: "{NodeId}"
+            repairReason: "FC8 - Node Recovery Exceeded Recovery Time Threshold - all repair steps exhausted"
+            repairFaultCode: "0"
+            shouldPushNonEnRoleInstancesToOos: "true"
+            shouldPushEnRoleInstancesToOos: "true"
+            skipUserOfrRequestThrottle: "false"
+            starJsonFaultDetails: ""
+            isVdnRequest: "false"
+            overrideIfNodeIsVDN: "false"
+          Mutating: true
+          RequiresApproval: true
+          Label: fc8_ofr_result
+          Timeout: 600
+          Notes: |
+            Use fault code 0 for general diagnostics as specified in the original TSG.
+            If this is a DD tenant, use RequestOFRFromDiagDelegated instead.
+
+      - PyCodeAction:
+          Description: Final summary and escalation guidance
+          Code: |
+            print("=== Step 8 Result ===")
+            print(f"OFR Request: {self.outputs.get('fc8_ofr_result', 'N/A')}")
+            print()
+            print("Follow-up:")
+            print("  - Nodes can be in OFR for a very long time")
+            print("  - Follow up on the node roughly once per week")
+            print("  - If the node is in OFR for more than 30 days, reach out to the xSSE Ops Team")
+            print("    for help getting an update from the data center technicians")
+            print()
+            print("=== Escalation Procedures ===")
+            print("If none of the steps resolve the node's health issues,")
+            print("refer to the 'Escalation Procedures for Node Recovery' TSG.")
+            print()
+            print("=== Contact ===")
+            print("For questions or problems following this TSG, reach out to the DD Hardware Support V-team.")
+
+            triageFlow = "->".join(self.context.visited_tree_nodes)
+            msg = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"],
+              "IncidentId": self.inputs["incidentId"],
+              "FaultCode": "8",
+              "FaultCodeString": "NodeRecoveryExceededRecoveryTimeThreshold",
+              "TMState": self.outputs.get('TMState', 'Unknown'),
+              "ClusterId": self.outputs.get('ClusterId', 'Unknown'),
+              "PfAgentVersion": self.outputs.get('PfAgentVersion', 'Unknown'),
+              "IsKnownBadPfAgent": str(self.outputs.get('IsKnownBadPfAgent', False)),
+              "RepairStepsOrder": "1) Check switch port (GA), 2) Check SAC (GA), 3) Power cycle + Reset Health (GA), 4) MOS boot + Redeploy FullOS (GA), 5) Investigate Bootstrap, 6) Delete OS images + Redeploy (GA), 7) Escalate (PfAgent/Titan/PolicyEngine), 8) Send to OFR (GA)",
+              "Escalation": "DD Hardware Support V-team, Titan Agents Team (PfAgent), xSSE Ops Team (OFR > 30 days)",
+              "TriageFlow": triageFlow
+            }
+            self.context.bookkeeper.append(msg)
+
+  Storage_FC8_NodeNotFound:
+    Description: |
+      Terminal node for FC8 when the specified NodeId is not found in fabric health data.
+      Guides the user to verify inputs and provides alternative lookup methods.
+
+    LLM_Discoverable: False
+
+    Input:
+      NodeId: "py|self.inputs.get('NodeId', None) or input('Please enter the NodeId: ')"
+      TenantName: "py|self.inputs.get('TenantName', None) or input('Please enter the TenantName: ')"
+
+    Steps:
+      # === GA TRANSLATION: Removed FcShell reference, kept Kusto as primary alternative ===
+      # Original had: "FcShell: $f = Get-Fabric <TenantName>; $n = $f | Get-Node '<NodeId>'; $n.faultinfo"
+      # FcShell is interactive (no GA). Kusto query already covers this lookup.
+      - PyCodeAction:
+          Description: Provide guidance when node is not found in fabric health data
+          Code: |
+            print("=== Node Not Found in Fabric Health Data ===")
+            print()
+            print(f"NodeId: {self.inputs['NodeId']}")
+            print(f"TenantName: {self.inputs['TenantName']}")
+            print()
+            print("The specified NodeId was not found in GetAllStorageNodeFabricHealth.")
+            print()
+            print("Possible causes:")
+            print("  1. NodeId may be incorrect - verify the GUID from the IcM incident")
+            print("  2. The node may have already been recovered or decommissioned")
+            print("  3. Data may be delayed in the Kusto table")
+            print()
+            print("Alternative verification (Kusto):")
+            print("  GetAllStorageNodeFabricHealth | where NodeId contains '<NodeId>'")
+            print()
+            print("[MANUAL - No GA equivalent] FcShell verification (interactive, requires SAW):")
+            print("  $f = Get-Fabric <TenantName>; $n = $f | Get-Node '<NodeId>'; $n.faultinfo")
+            print()
+            print("If the node cannot be found, escalate to XSSE or DD Hardware Support V-team.")
+
+            triageFlow = "->".join(self.context.visited_tree_nodes)
+            msg = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"],
+              "Status": "Node not found in fabric health data",
+              "Action": "Verify NodeId and TenantName via Kusto, escalate to XSSE if needed",
+              "TriageFlow": triageFlow
+            }
+            self.context.bookkeeper.append(msg)

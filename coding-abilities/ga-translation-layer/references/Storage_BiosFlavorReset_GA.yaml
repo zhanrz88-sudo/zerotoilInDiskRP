@@ -1,0 +1,248 @@
+Nodes:
+  Storage_BiosFlavorReset:
+    Description: |
+      TSG for performing BIOS Flavor Reset on Azure Storage Direct Drive nodes.
+      This SOP is owned by the Xstore Sustained Engineering Team (XSSE) and DD Hardware Support V-team.
+      BIOS flavor reset sets or resets a node's BIOS flavor, which controls Secure Boot and NVDIMM-SW
+      partition settings essential for Direct Drive Storage nodes.
+      WARNING: Changing BIOS flavors can be data-destructive. Verify the node is not participating in
+      the storage service and that its data has been safely replicated before proceeding.
+      Node must be Gen6 or higher (Gen5 and below does not support BIOS flavor).
+
+    Notes:
+      OriginalTSG: "https://eng.ms/docs/cloud-ai-platform/azure-core/azure-storage/directdrive/azure-direct-drive/azure-direct-drive-documents/tsg/noderepairs/repairactions/biosflavorreset"
+      Ownership: "Xstore Sustained Engineering Team (XSSE) and DD Hardware Support V-team"
+      R2DExemption_GenevaActions: "PBI 30425559: [R2D Exemption Request] Node Recovery using Safe Geneva Actions"
+      TranslatedFrom: "Storage_BiosFlavorReset.yaml (manual portal version)"
+      TranslationMethod: "ga-translation-layer coding ability"
+
+    LLM_Discoverable: True
+
+    InputPreprocessing:
+      - ParamsInferAction:
+          InferFrom: |
+            py|'\n\n'.join([d for d in self.outputs['icm_info_dict']['text_discussions'] if any(kw in d.lower() for kw in ['nodeid', 'node id', 'tenantname', 'tenant name', 'bios', 'flavor', 'slot'])])
+          Parameters:
+            NodeId:
+              Type: str
+              Description: |
+                NodeId is a GUID string identifying the Azure node to perform BIOS flavor reset on.
+                Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+                Example: 3676e9b2-c686-b5e3-86fd-b8d56073901c
+            TenantName:
+              Type: str
+              Description: |
+                TenantName is a string representing the Azure Storage tenant name
+                that contains the node to be repaired.
+
+    Input:
+      incidentId: "py|self.inputs['incidentId'] if 'incidentId' in self.inputs else input('Please enter the incidentId (e.g. 552999691): ')"
+      NodeId: "py|self.inputs.get('NodeId', None) or input('Please enter the NodeId (GUID, e.g. 3676e9b2-c686-b5e3-86fd-b8d56073901c): ')"
+      TenantName: "py|self.inputs.get('TenantName', None) or input('Please enter the TenantName: ')"
+
+    Steps:
+      - PyCodeAction:
+          Description: Initialize diagnostic process and validate prerequisites for BIOS Flavor Reset
+          Code: |
+            tsg_link = "https://eng.ms/docs/cloud-ai-platform/azure-core/azure-storage/directdrive/azure-direct-drive/azure-direct-drive-documents/tsg/noderepairs/repairactions/biosflavorreset"
+            self.outputs['bios_reset_diag'] = DiagnosticProcess("BIOS Flavor Reset - Storage Node Repair", self.inputs['incidentId'], tsg_link)
+            case_ids = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"]
+            }
+            self.outputs['bios_reset_diag'].add_case(case_ids)
+
+            print("=== BIOS Flavor Reset - Prerequisites ===")
+            print()
+            print("1. [JIT Access] Acquire JIT for: Geneva Actions > Cross Service (DD/Xstore) Fabric Operations > BiosFlavorResetCrossServiceDelegated")
+            print()
+            print("2. [Health Check] Verify that the tenant/node meets safety requirements per 'Health Conditions for Node Recovery' SOP")
+            print()
+            print("3. [Node Generation] Node must be Gen6 or higher. Gen5 and below does not have the concept of a BIOS flavor.")
+            print()
+            print("4. [Data Safety] WARNING: Changing BIOS flavors can be DATA-DESTRUCTIVE.")
+            print("   Double-check that the node is NOT participating in the storage service")
+            print("   and that its data has been safely replicated on other nodes before proceeding.")
+            print()
+            print("5. [R2D Exemption] Geneva Actions: PBI 30425559 (approved for vendors and FTEs)")
+
+      - KustoQueryAction:
+          Description: Query node fabric health to verify current state before BIOS flavor reset
+          Label: bios_reset_node_fabric_health_df
+          Cluster: https://xsse.westcentralus.kusto.windows.net
+          Database: xssedb
+          Query: |
+            GetAllStorageNodeFabricHealth
+            | where NodeId contains "{NodeId}"
+            | project ClusterId, Tenant, NodeId, TMState, DCMState, HIFault, HIFaultReason, OFRFaultCode, OFRFaultReason
+
+      - PyCodeAction:
+          Description: Analyze node fabric health state and confirm node is eligible for BIOS flavor reset
+          Code: |
+            df = self.outputs['bios_reset_node_fabric_health_df'].df
+            if df.empty:
+              result = "Node not found in GetAllStorageNodeFabricHealth. Verify NodeId is correct."
+              self.outputs['NodeFound'] = False
+            else:
+              row = df.iloc[0]
+              tm_state = str(row.get('TMState', ''))
+              hi_fault = str(row.get('HIFault', ''))
+              ofr_fault = str(row.get('OFRFaultCode', ''))
+              cluster_id = str(row.get('ClusterId', ''))
+
+              self.outputs['NodeFound'] = True
+              self.outputs['TMState'] = tm_state
+              self.outputs['ClusterId'] = cluster_id
+
+              result = f"Node found. TMState={tm_state}, ClusterId={cluster_id}, HIFault={hi_fault}, OFRFaultCode={ofr_fault}"
+              print(f"=== Node State Before BIOS Flavor Reset ===")
+              print(result)
+
+            self.outputs['bios_reset_node_status'] = result
+            self.outputs['bios_reset_diag'].add_kusto_step(self.outputs['bios_reset_node_fabric_health_df'], result)
+
+      - JumpOutAction:
+          Description: Jump out if node is not found in fabric health data
+          ShouldJumpOut: "py|not self.outputs['NodeFound']"
+          JumpTo: Storage_BiosFlavorReset_NodeNotFound
+          InitCode: |
+            self.inputs['TriageMessage'] = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"],
+              "Status": "Node not found in GetAllStorageNodeFabricHealth",
+              "Action": "Verify NodeId and TenantName are correct"
+            }
+
+      - KustoQueryAction:
+          Description: Query node BIOS and firmware information to identify current BIOS flavor
+          Label: bios_reset_node_firmware_df
+          Cluster: https://xsse.westcentralus.kusto.windows.net
+          Database: xssedb
+          Query: |
+            GetAllStorageNodeFabricHealth
+            | where NodeId contains "{NodeId}"
+            | project NodeId, ClusterId, Tenant, TMState, DCMState
+
+      # === GA TRANSLATION: This step was converted from manual portal instructions ===
+      # Original: PyCodeAction with print() statements instructing user to navigate Geneva Actions portal
+      # Translation: GenevaAction step that directly invokes the GA via acis.execute()
+      - GenevaAction:
+          Description: Execute BIOS Flavor Reset on the node via Geneva Action
+          OperationId: BiosFlavorResetCrossServiceDelegated
+          Extension: Xstore
+          OperationGroup: FabricCrossService
+          Parameters:
+            tenantName: "{TenantName}"
+            clusterName: ""
+            nodeId: "{NodeId}"
+            incidentId: "{incidentId}"
+            incidentCategory: ""
+          Mutating: true
+          RequiresApproval: true
+          Label: bios_reset_ga_result
+          Timeout: 600
+          Notes: |
+            Uses CrossService version (preferred over deprecated SustainabilityDelegatedSafe BiosFlavorReset).
+            Node must be Gen6+. Use AC flavor (not GN) as intermediate reset flavor because
+            Secure Boot is required and GN does not support it.
+
+      - PyCodeAction:
+          Description: Log the Geneva Action execution to diagnostics
+          Code: |
+            self.outputs['bios_reset_diag'].add_step(
+              "Geneva Actions - BiosFlavorResetCrossServiceDelegated",
+              f"Endpoint=Production, TenantName={self.inputs['TenantName']}, NodeId={self.inputs['NodeId']}"
+            )
+
+      - KustoQueryAction:
+          Description: Query node state after BIOS flavor reset to verify the node is transitioning toward healthy state
+          Label: bios_reset_post_check_df
+          Cluster: https://xsse.westcentralus.kusto.windows.net
+          Database: xssedb
+          Query: |
+            GetAllStorageNodeFabricHealth
+            | where NodeId contains "{NodeId}"
+            | project ClusterId, Tenant, NodeId, TMState, DCMState, HIFault, HIFaultReason, OFRFaultCode, OFRFaultReason
+
+      - PyCodeAction:
+          Description: Analyze post-reset node state and provide post-execution guidance
+          Code: |
+            df = self.outputs['bios_reset_post_check_df'].df
+            if not df.empty:
+              row = df.iloc[0]
+              post_tm_state = str(row.get('TMState', ''))
+              post_hi_fault = str(row.get('HIFault', ''))
+              print(f"=== Post-Reset Node State ===")
+              print(f"TMState={post_tm_state}, HIFault={post_hi_fault}")
+            else:
+              print("Post-reset node state not available yet (data may be delayed in Kusto).")
+
+            print()
+            print("=== Post-Execution Guidance ===")
+            print()
+            print("Storage Nodes: Resetting BIOS flavor typically REQUIRES a repave before the node")
+            print("  can return to a healthy state. Refer to the 'Repave Node' SOP.")
+            print()
+            print("Utility Nodes: Typically do NOT require a repave (no NVDIMM partition).")
+            print()
+            print("If the BIOS flavor reset does not resolve the node's health issues,")
+            print("refer to the 'Escalation Procedures for Node Recovery' SOP.")
+            print()
+            print("=== Escalation ===")
+            print("Contact DD Hardware Support V-team or current DRI (Xstore/Sustainability Engineering in IcM).")
+
+            self.outputs['bios_reset_diag'].add_kusto_step(self.outputs['bios_reset_post_check_df'],
+              "Post-reset verification query")
+
+            triageFlow = "->".join(self.context.visited_tree_nodes)
+            msg = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"],
+              "IncidentId": self.inputs["incidentId"],
+              "Action": "BiosFlavorResetCrossServiceDelegated",
+              "Method": "Geneva Action (Xstore > FabricCrossService > BiosFlavorResetCrossServiceDelegated)",
+              "PostExecution_StorageNodes": "Repave typically required (see Repave Node SOP)",
+              "PostExecution_UtilityNodes": "Repave typically NOT required",
+              "Escalation": "DD Hardware Support V-team or current DRI (Xstore/Sustainability Engineering in IcM)",
+              "TriageFlow": triageFlow
+            }
+            self.context.bookkeeper.append(msg)
+
+  Storage_BiosFlavorReset_NodeNotFound:
+    Description: |
+      Terminal node for BIOS Flavor Reset when the specified NodeId is not found in fabric health data.
+      Guides the user to verify inputs and escalate if the node cannot be located.
+
+    LLM_Discoverable: False
+
+    Input:
+      NodeId: "py|self.inputs.get('NodeId', None) or input('Please enter the NodeId: ')"
+      TenantName: "py|self.inputs.get('TenantName', None) or input('Please enter the TenantName: ')"
+
+    Steps:
+      - PyCodeAction:
+          Description: Provide guidance when node is not found in fabric health data
+          Code: |
+            print("=== Node Not Found in Fabric Health Data ===")
+            print()
+            print(f"NodeId: {self.inputs['NodeId']}")
+            print(f"TenantName: {self.inputs['TenantName']}")
+            print()
+            print("The specified NodeId was not found in GetAllStorageNodeFabricHealth.")
+            print()
+            print("Possible causes:")
+            print("  1. NodeId may be incorrect - verify the GUID from the IcM incident")
+            print("  2. The node may have already been recovered or decommissioned")
+            print("  3. Data may be delayed in the Kusto table")
+            print()
+            print("If the node cannot be verified, escalate to DD Hardware Support V-team or XSSE.")
+
+            triageFlow = "->".join(self.context.visited_tree_nodes)
+            msg = {
+              "NodeId": self.inputs["NodeId"],
+              "TenantName": self.inputs["TenantName"],
+              "Status": "Node not found in fabric health data",
+              "Action": "Verify NodeId and TenantName, escalate to DD Hardware Support or XSSE",
+              "TriageFlow": triageFlow
+            }
+            self.context.bookkeeper.append(msg)

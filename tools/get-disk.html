@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiskRP Get Disk</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e; color: #d4d4d4;
+            display: flex; justify-content: center; align-items: flex-start;
+            min-height: 100vh; padding: 40px 20px;
+        }
+        .container { max-width: 900px; width: 100%; }
+        h1 { color: #569cd6; margin-bottom: 8px; font-size: 1.5em; }
+        .subtitle { color: #808080; margin-bottom: 24px; font-size: 0.9em; }
+        .card {
+            background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;
+            padding: 24px; margin-bottom: 16px;
+        }
+        label { display: block; color: #9cdcfe; margin-bottom: 6px; font-size: 0.85em; font-weight: 600; }
+        input {
+            width: 100%; padding: 10px 12px; background: #1e1e1e; border: 1px solid #3c3c3c;
+            border-radius: 4px; color: #d4d4d4; font-size: 0.95em; margin-bottom: 16px;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+        }
+        input:focus { outline: none; border-color: #569cd6; }
+        input::placeholder { color: #555; }
+        button {
+            padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.95em; font-weight: 600; transition: background 0.2s;
+        }
+        .btn-primary { background: #0e639c; color: white; }
+        .btn-primary:hover { background: #1177bb; }
+        .btn-primary:disabled { background: #3c3c3c; color: #808080; cursor: not-allowed; }
+        .btn-secondary { background: #3c3c3c; color: #d4d4d4; margin-left: 8px; }
+        .btn-secondary:hover { background: #4c4c4c; }
+        .btn-copy { background: #2d7d46; color: white; font-size: 0.8em; padding: 4px 10px; margin-left: 8px; }
+        .btn-copy:hover { background: #369b52; }
+        .info {
+            background: #0e3a5c; border: 1px solid #1177bb; border-radius: 4px;
+            padding: 10px 14px; margin-bottom: 16px; font-size: 0.85em; color: #9cdcfe;
+        }
+        .output {
+            margin-top: 20px; padding: 16px; background: #1e1e1e; border: 1px solid #3c3c3c;
+            border-radius: 4px; display: none;
+        }
+        .output h3 { color: #4ec9b0; margin-bottom: 12px; font-size: 0.95em; }
+        .section-label { color: #808080; font-size: 0.8em; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .result-box {
+            background: #2d2d2d; padding: 12px; border-radius: 4px; margin-bottom: 12px;
+            font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82em;
+            line-height: 1.6; white-space: pre-wrap; color: #ce9178;
+            max-height: 600px; overflow-y: auto;
+        }
+        .meta-row {
+            display: flex; gap: 20px; margin-bottom: 12px; font-size: 0.85em;
+        }
+        .meta-item { color: #808080; }
+        .meta-item span { color: #9cdcfe; }
+        .python-box {
+            background: #2d2d2d; padding: 12px; border-radius: 4px;
+            font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82em;
+            line-height: 1.6; white-space: pre-wrap; color: #ce9178;
+        }
+        .spinner {
+            display: inline-block; width: 16px; height: 16px;
+            border: 2px solid #3c3c3c; border-top: 2px solid #569cd6;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .history { margin-top: 24px; }
+        .history h3 { color: #808080; font-size: 0.85em; margin-bottom: 8px; }
+        .history-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px; background: #2d2d2d; border-radius: 4px; margin-bottom: 4px;
+            font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82em; cursor: pointer;
+        }
+        .history-item:hover { background: #383838; }
+        .history-item .name { color: #9cdcfe; }
+        .history-item .time { color: #555; font-size: 0.8em; }
+        a { color: #569cd6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💿 DiskRP Get Disk</h1>
+        <p class="subtitle">GetDisk via ACIS — enter disk name, see full internal metadata</p>
+
+        <div class="info">
+            💡 Only disk name needed. Kusto lookup finds subscription/region/RG, then runs GetDisk on the backend (~30s).
+        </div>
+
+        <div class="card">
+            <label>Disk Name</label>
+            <input type="text" id="diskName" placeholder="e.g. diskrptestodmxtnvmrjjr" autofocus>
+
+            <div>
+                <button class="btn-primary" id="getBtn" onclick="getDisk()">🔍 Get Disk</button>
+                <button class="btn-secondary" onclick="clearAll()">Clear</button>
+            </div>
+            <div id="statusMsg" style="margin-top: 10px; font-size: 0.85em; color: #808080;"></div>
+        </div>
+
+        <div class="output" id="output">
+            <h3>✅ GetDisk Result</h3>
+
+            <div class="meta-row">
+                <div class="meta-item">Sub: <span id="metaSub"></span></div>
+                <div class="meta-item">Region: <span id="metaRegion"></span></div>
+                <div class="meta-item">RG: <span id="metaRg"></span></div>
+            </div>
+            <div class="meta-row">
+                <div class="meta-item">Job: <span id="metaJob"></span></div>
+                <div class="meta-item"><a id="metaReport" href="#" target="_blank">View Report</a></div>
+            </div>
+
+            <div class="section-label">Result <button class="btn-copy" onclick="copyResult()">Copy</button></div>
+            <div class="result-box" id="resultBox"></div>
+        </div>
+
+        <div class="output" id="offlineOutput" style="display:none;">
+            <h3>📋 Python Snippet (paste in SAW JupyterLite)</h3>
+            <div class="section-label">Python <button class="btn-copy" onclick="copySnippet()">Copy</button></div>
+            <div class="python-box" id="pythonSnippetBox"></div>
+        </div>
+
+        <div class="history" id="historySection" style="display:none;">
+            <h3>Recent</h3>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8091';
+        const history = JSON.parse(localStorage.getItem('getDiskHistory') || '[]');
+
+        async function getDisk() {
+            const diskName = document.getElementById('diskName').value.trim();
+            if (!diskName) { alert('Please enter a disk name'); return; }
+
+            const btn = document.getElementById('getBtn');
+            const status = document.getElementById('statusMsg');
+
+            btn.disabled = true;
+            document.getElementById('output').style.display = 'none';
+            document.getElementById('offlineOutput').style.display = 'none';
+
+            // Check if server is available
+            let serverAvailable = false;
+            try {
+                const ping = await fetch(`${API_BASE}/api/lookup?disk=__ping__`, {signal: AbortSignal.timeout(2000)});
+                serverAvailable = true;
+            } catch(e) {}
+
+            if (!serverAvailable) {
+                // Offline mode — generate Python snippet
+                status.innerHTML = '⚡ No local server — generating Python snippet.';
+                status.style.color = '#cca700';
+                btn.disabled = false;
+                btn.textContent = '🔍 Get Disk';
+                showOffline(diskName);
+                return;
+            }
+
+            // Online mode — full backend call
+            status.innerHTML = '<span class="spinner"></span> Step 1/2: Kusto lookup...';
+            status.style.color = '#569cd6';
+
+            try {
+                // Quick lookup first for immediate feedback
+                const lookupResp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`);
+                const lookupData = await lookupResp.json();
+
+                if (!lookupResp.ok) {
+                    status.textContent = '❌ ' + (lookupData.error || 'Lookup failed');
+                    status.style.color = '#f44747';
+                    btn.disabled = false;
+                    btn.textContent = '🔍 Get Disk';
+                    return;
+                }
+
+                status.innerHTML = `<span class="spinner"></span> Step 2/2: Running GetDisk on backend (~30s)... Found: ${lookupData.region} / ${lookupData.resourceGroupName}`;
+
+                // Now call getdisk endpoint
+                const resp = await fetch(`${API_BASE}/api/getdisk?disk=${encodeURIComponent(diskName)}`);
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    status.textContent = '❌ ' + (data.error || 'GetDisk failed');
+                    status.style.color = '#f44747';
+                    btn.disabled = false;
+                    btn.textContent = '🔍 Get Disk';
+                    return;
+                }
+
+                // Show results
+                const lookup = data.lookup || {};
+                document.getElementById('metaSub').textContent = lookup.subscriptionId || '';
+                document.getElementById('metaRegion').textContent = lookup.region || '';
+                document.getElementById('metaRg').textContent = lookup.resourceGroupName || '';
+                document.getElementById('metaJob').textContent = data.job_id || '';
+                document.getElementById('metaReport').href = data.report_url || '#';
+
+                // Try to pretty-format JSON output
+                let outputText = data.output || 'No output';
+                try {
+                    const parsed = JSON.parse(outputText);
+                    outputText = JSON.stringify(parsed, null, 2);
+                } catch(e) {}
+
+                document.getElementById('resultBox').textContent = outputText;
+                document.getElementById('output').style.display = 'block';
+
+                status.innerHTML = `✅ Done — job ${data.job_id}`;
+                status.style.color = '#6a9955';
+
+                addHistory(diskName, lookup.subscriptionId, lookup.region, lookup.resourceGroupName);
+            } catch (e) {
+                status.textContent = '❌ Error: ' + e.message;
+                status.style.color = '#f44747';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Get Disk';
+            }
+        }
+
+        function showOffline(diskName) {
+            const python = `from xportal import acis
+from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+import json
+
+disk_name = '${diskName}'
+
+# Step 1: Kusto lookup
+print(f'Looking up disk: {disk_name} ...')
+kcs = KustoConnectionStringBuilder.with_az_cli_authentication('https://disks.kusto.windows.net')
+client = KustoClient(kcs)
+kql = f"""DiskManagerApiQoSEvent
+| where PreciseTimeStamp > ago(7d)
+| where resourceName == '{disk_name}'
+| project subscriptionId, region, resourceGroupName
+| take 1"""
+resp = client.execute('disks', kql)
+rows = [r for r in resp.primary_results[0]]
+if not rows:
+    raise Exception(f'Disk {disk_name} not found in Kusto')
+
+sub_id = str(rows[0]['subscriptionId'])
+region = str(rows[0]['region'])
+rg = str(rows[0]['resourceGroupName'])
+print(f'Found: sub={sub_id}, region={region}, rg={rg}')
+
+# Step 2: GetDisk
+r = await acis.execute(
+    'Compute Platform Disks', 'GetDisk',
+    [sub_id, region, rg, disk_name],
+    endpoint='Prod')
+
+msg = r.get('resultMessage', '') if isinstance(r, dict) else str(r)
+try:
+    print(json.dumps(json.loads(msg), indent=2))
+except Exception:
+    print(msg)`;
+
+            document.getElementById('pythonSnippetBox').textContent = python;
+            document.getElementById('offlineOutput').style.display = 'block';
+        }
+
+        function copyResult() {
+            navigator.clipboard.writeText(document.getElementById('resultBox').textContent);
+            event.target.textContent = 'Copied!';
+            setTimeout(() => event.target.textContent = 'Copy', 1500);
+        }
+
+        function copySnippet() {
+            navigator.clipboard.writeText(document.getElementById('pythonSnippetBox').textContent);
+            event.target.textContent = 'Copied!';
+            setTimeout(() => event.target.textContent = 'Copy', 1500);
+        }
+
+        function addHistory(diskName, subId, region, rg) {
+            const entry = { diskName, subId, region, rg, time: new Date().toLocaleString() };
+            const idx = history.findIndex(h => h.diskName === diskName);
+            if (idx >= 0) history.splice(idx, 1);
+            history.unshift(entry);
+            if (history.length > 10) history.pop();
+            localStorage.setItem('getDiskHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            if (history.length === 0) {
+                document.getElementById('historySection').style.display = 'none';
+                return;
+            }
+            document.getElementById('historySection').style.display = 'block';
+            document.getElementById('historyList').innerHTML = history.map(h =>
+                `<div class="history-item" onclick="document.getElementById('diskName').value='${h.diskName}'; getDisk();">
+                    <span class="name">${h.diskName}</span>
+                    <span class="time">${h.rg || ''} · ${h.time}</span>
+                </div>`
+            ).join('');
+        }
+
+        function clearAll() {
+            document.getElementById('diskName').value = '';
+            document.getElementById('output').style.display = 'none';
+            document.getElementById('offlineOutput').style.display = 'none';
+            document.getElementById('statusMsg').textContent = '';
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Enter') getDisk(); });
+        renderHistory();
+    </script>
+</body>
+</html>

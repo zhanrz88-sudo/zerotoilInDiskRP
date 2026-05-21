@@ -17,24 +17,41 @@ temp-workspace/        # Git-ignored scratch folder for temporary notebooks
 .github/               # Copilot agents, skills, and instructions
 ```
 
-## Quick Start
+## Setup
 
-### 1. Set up Python environment
+### First-time setup
 ```powershell
-python -m venv .venv
-& .venv\Scripts\Activate.ps1
-pip install -e ".[test,dev]" --extra-index-url <Storage-XI-feed-URL>
+# From the repo root — creates .venv, installs all deps from Storage-XI-feed
+.\scripts\prepare_env.ps1
 ```
 
-### 2. Run tests
+This requires Python 3.12 and Azure CLI (`az login`). It installs `zerotoil` in editable mode plus internal packages (`xportal`, `xds-client`, `xstore`, `xaiops`, `xrhc`).
+
+### Activate the environment
 ```powershell
-pytest
+.\.venv\Scripts\Activate.ps1
 ```
 
-### 3. Submit a job to backend
+## Quick Test
+
+### Unit test (no external dependencies, all APIs mocked)
 ```powershell
-python scripts/run_zerotoil_job.py --tsg <tsg_module> --incident <id>
+.\.venv\Scripts\Activate.ps1
+python -m pytest tests\tsgs\test_xkulfi_upgrade_action_failure.py
 ```
+
+### Integration test with a real incident (~1-2 mins, requires network)
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -c "import asyncio; from zerotoil.tsgs.xkulfi_upgrade_action_failure import XKulfiUpgradeActionFailure; tsg = XKulfiUpgradeActionFailure(dry_run=True); asyncio.run(tsg.run_for_incident('783747141'))"
+```
+
+### Submit job to the XJupyterLite backend
+```powershell
+python scripts\run_zerotoil_job.py --notebook Xstore/zerotoil/tsgs/xkulfi_upgrade_action_failure.ipynb --environment test --params '{"incident_id":"783747141"}' -o
+```
+
+> **Tip:** Always use `dry_run=True` for first runs against live incidents. The backend worker has read-only claims — mutating operations (feature approvals, ICM transfers) require SAW with JIT.
 
 ## Key TSGs
 

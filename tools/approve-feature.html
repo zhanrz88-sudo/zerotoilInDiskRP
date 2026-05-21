@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiskRP Feature Approval</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e; color: #d4d4d4;
+            display: flex; justify-content: center; align-items: flex-start;
+            min-height: 100vh; padding: 40px 20px;
+        }
+        .container { max-width: 700px; width: 100%; }
+        h1 { color: #569cd6; margin-bottom: 8px; font-size: 1.5em; }
+        .subtitle { color: #808080; margin-bottom: 24px; font-size: 0.9em; }
+        .card {
+            background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;
+            padding: 24px; margin-bottom: 16px;
+        }
+        label { display: block; color: #9cdcfe; margin-bottom: 6px; font-size: 0.85em; font-weight: 600; }
+        input, select {
+            width: 100%; padding: 10px 12px; background: #1e1e1e; border: 1px solid #3c3c3c;
+            border-radius: 4px; color: #d4d4d4; font-size: 0.95em; margin-bottom: 16px;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+        }
+        input:focus, select:focus { outline: none; border-color: #569cd6; }
+        input::placeholder { color: #555; }
+        .row { display: flex; gap: 12px; }
+        .row > div { flex: 1; }
+        button {
+            padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.95em; font-weight: 600; transition: background 0.2s;
+        }
+        .btn-primary { background: #0e639c; color: white; }
+        .btn-primary:hover { background: #1177bb; }
+        .btn-secondary { background: #3c3c3c; color: #d4d4d4; margin-left: 8px; }
+        .btn-secondary:hover { background: #4c4c4c; }
+        .btn-copy { background: #2d7d46; color: white; font-size: 0.8em; padding: 4px 10px; margin-left: 8px; }
+        .btn-copy:hover { background: #369b52; }
+        .output {
+            margin-top: 20px; padding: 16px; background: #1e1e1e; border: 1px solid #3c3c3c;
+            border-radius: 4px; display: none;
+        }
+        .output h3 { color: #4ec9b0; margin-bottom: 12px; font-size: 0.95em; }
+        .link-box {
+            background: #2d2d2d; padding: 10px; border-radius: 4px; margin-bottom: 12px;
+            word-break: break-all; font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.85em; line-height: 1.5;
+        }
+        .link-box a { color: #569cd6; text-decoration: none; }
+        .link-box a:hover { text-decoration: underline; }
+        .python-box {
+            background: #2d2d2d; padding: 12px; border-radius: 4px;
+            font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82em;
+            line-height: 1.6; white-space: pre-wrap; color: #ce9178;
+        }
+        .section-label { color: #808080; font-size: 0.8em; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .warning {
+            background: #3e2c00; border: 1px solid #6e5000; border-radius: 4px;
+            padding: 10px 14px; margin-bottom: 16px; font-size: 0.85em; color: #cca700;
+        }
+        .history { margin-top: 24px; }
+        .history h3 { color: #808080; font-size: 0.85em; margin-bottom: 8px; }
+        .history-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px; background: #2d2d2d; border-radius: 4px; margin-bottom: 4px;
+            font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82em; cursor: pointer;
+        }
+        .history-item:hover { background: #383838; }
+        .history-item .sub { color: #9cdcfe; }
+        .history-item .time { color: #555; font-size: 0.8em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔑 DiskRP Feature Approval</h1>
+        <p class="subtitle">Generate SAW links for ApproveFeatureRegistration via Geneva Actions</p>
+
+        <div class="warning">
+            ⚠️ Requires SAW with JIT <code>DiskRP-PlatformServiceOperator</code> — backend worker cannot approve features.
+        </div>
+
+        <div class="card">
+            <div class="row">
+                <div style="flex: 2;">
+                    <label>Subscription ID</label>
+                    <input type="text" id="subId" placeholder="e.g. 4b0a7581-9eea-4d30-a166-f8fac23b6edd">
+                </div>
+            </div>
+            <div class="row">
+                <div>
+                    <label>Resource Provider</label>
+                    <input type="text" id="rpNamespace" value="Microsoft.Compute">
+                </div>
+                <div>
+                    <label>Feature Name</label>
+                    <select id="featureName">
+                        <option value="SnapshotImmutabilityPolicyPreview">SnapshotImmutabilityPolicyPreview</option>
+                        <option value="EncryptionAtRestWithPlatformAndCustomerKeys">EncryptionAtRestWithPlatformAndCustomerKeys</option>
+                        <option value="DiskChangeVersion">DiskChangeVersion</option>
+                    </select>
+                </div>
+            </div>
+            <label>Custom Feature Name (optional — overrides dropdown)</label>
+            <input type="text" id="customFeature" placeholder="Leave empty to use dropdown above">
+
+            <div>
+                <button class="btn-primary" onclick="generate()">Generate Links</button>
+                <button class="btn-secondary" onclick="clearAll()">Clear</button>
+            </div>
+        </div>
+
+        <div class="output" id="output">
+            <h3>✅ Generated Links</h3>
+
+            <div class="section-label">Geneva Portal Link <button class="btn-copy" onclick="copyEl('genevaLink')">Copy</button></div>
+            <div class="link-box" id="genevaLinkBox"></div>
+
+            <div class="section-label">Python Snippet (for SAW JupyterLite) <button class="btn-copy" onclick="copyEl('pythonSnippetBox')">Copy</button></div>
+            <div class="python-box" id="pythonSnippetBox"></div>
+        </div>
+
+        <div class="history" id="historySection" style="display:none;">
+            <h3>Recent</h3>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script>
+        const GENEVA_BASE = 'https://portal.microsoftgeneva.com/';
+        const history = JSON.parse(localStorage.getItem('approveFeatureHistory') || '[]');
+
+        function getFeature() {
+            const custom = document.getElementById('customFeature').value.trim();
+            return custom || document.getElementById('featureName').value;
+        }
+
+        function generate() {
+            const subId = document.getElementById('subId').value.trim();
+            if (!subId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(subId)) {
+                alert('Please enter a valid subscription ID (GUID format)');
+                return;
+            }
+
+            const rpNamespace = document.getElementById('rpNamespace').value.trim();
+            const featureName = getFeature();
+
+            const params = {
+                page: 'actions',
+                acisEndpoint: 'Public',
+                tab: 'Extensions',
+                extension: 'Azure Resource Manager',
+                group: 'Feature Management',
+                operationId: 'ApproveFeatureRegistration',
+                inputMode: 'single',
+                params: JSON.stringify({
+                    resourceprovidernamespace: rpNamespace,
+                    featurename: featureName,
+                    wellknownsubscriptionid: subId
+                }),
+                actionEndpoint: 'Feature'
+            };
+            const genevaUrl = GENEVA_BASE + '?' + new URLSearchParams(params).toString();
+
+            const python = `from xportal import acis
+
+r = await acis.execute(
+    'Azure Resource Manager',
+    'ApproveFeatureRegistration',
+    ['${rpNamespace}', '${featureName}', '${subId}'],
+    endpoint='Feature')
+print(r)`;
+
+            document.getElementById('genevaLinkBox').innerHTML =
+                `<a href="${genevaUrl}" target="_blank" id="genevaLink">${genevaUrl}</a>`;
+            document.getElementById('pythonSnippetBox').textContent = python;
+            document.getElementById('output').style.display = 'block';
+
+            addHistory(subId, featureName);
+        }
+
+        function copyEl(id) {
+            let text;
+            if (id === 'genevaLink') {
+                text = document.querySelector('#genevaLinkBox a').href;
+            } else {
+                text = document.getElementById(id).textContent;
+            }
+            navigator.clipboard.writeText(text);
+            event.target.textContent = 'Copied!';
+            setTimeout(() => event.target.textContent = 'Copy', 1500);
+        }
+
+        function addHistory(subId, feature) {
+            const entry = { subId, feature, time: new Date().toLocaleString() };
+            const idx = history.findIndex(h => h.subId === subId && h.feature === feature);
+            if (idx >= 0) history.splice(idx, 1);
+            history.unshift(entry);
+            if (history.length > 10) history.pop();
+            localStorage.setItem('approveFeatureHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            if (history.length === 0) {
+                document.getElementById('historySection').style.display = 'none';
+                return;
+            }
+            document.getElementById('historySection').style.display = 'block';
+            document.getElementById('historyList').innerHTML = history.map(h =>
+                `<div class="history-item" onclick="loadHistory('${h.subId}','${h.feature}')">
+                    <span class="sub">${h.subId}</span>
+                    <span class="time">${h.feature} · ${h.time}</span>
+                </div>`
+            ).join('');
+        }
+
+        function loadHistory(subId, feature) {
+            document.getElementById('subId').value = subId;
+            const sel = document.getElementById('featureName');
+            const opt = Array.from(sel.options).find(o => o.value === feature);
+            if (opt) { sel.value = feature; document.getElementById('customFeature').value = ''; }
+            else { document.getElementById('customFeature').value = feature; }
+            generate();
+        }
+
+        function clearAll() {
+            document.getElementById('subId').value = '';
+            document.getElementById('customFeature').value = '';
+            document.getElementById('output').style.display = 'none';
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Enter') generate(); });
+        renderHistory();
+    </script>
+</body>
+</html>

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiskRP Break ISF</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e; color: #d4d4d4;
+            display: flex; justify-content: center; align-items: flex-start;
+            min-height: 100vh; padding: 40px 20px;
+        }
+        .container { max-width: 700px; width: 100%; }
+        h1 { color: #569cd6; margin-bottom: 8px; font-size: 1.5em; }
+        .subtitle { color: #808080; margin-bottom: 24px; font-size: 0.9em; }
+        .card {
+            background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;
+            padding: 24px; margin-bottom: 16px;
+        }
+        label { display: block; color: #9cdcfe; margin-bottom: 6px; font-size: 0.85em; font-weight: 600; }
+        input, select {
+            width: 100%; padding: 10px 12px; background: #1e1e1e; border: 1px solid #3c3c3c;
+            border-radius: 4px; color: #d4d4d4; font-size: 0.95em; margin-bottom: 16px;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+        }
+        input:focus, select:focus { outline: none; border-color: #569cd6; }
+        input::placeholder { color: #555; }
+        .row { display: flex; gap: 12px; }
+        .row > div { flex: 1; }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+        .checkbox-row input[type="checkbox"] { width: auto; margin: 0; }
+        .checkbox-row label { margin: 0; display: inline; }
+        button {
+            padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;
+            font-size: 0.95em; font-weight: 600; transition: background 0.2s;
+        }
+        .btn-primary { background: #0e639c; color: white; }
+        .btn-primary:hover { background: #1177bb; }
+        .btn-secondary { background: #3c3c3c; color: #d4d4d4; margin-left: 8px; }
+        .btn-secondary:hover { background: #4c4c4c; }
+        .btn-copy { background: #2d7d46; color: white; font-size: 0.8em; padding: 4px 10px; margin-left: 8px; }
+        .btn-copy:hover { background: #369b52; }
+        .output {
+            margin-top: 20px; padding: 16px; background: #1e1e1e; border: 1px solid #3c3c3c;
+            border-radius: 4px; display: none;
+        }
+        .output h3 { color: #4ec9b0; margin-bottom: 12px; font-size: 0.95em; }
+        .link-box {
+            background: #2d2d2d; padding: 10px; border-radius: 4px; margin-bottom: 12px;
+            word-break: break-all; font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.85em; line-height: 1.5;
+        }
+        .link-box a { color: #569cd6; text-decoration: none; }
+        .link-box a:hover { text-decoration: underline; }
+        .python-box {
+            background: #2d2d2d; padding: 12px; border-radius: 4px;
+            font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82em;
+            line-height: 1.6; white-space: pre-wrap; color: #ce9178;
+        }
+        .section-label { color: #808080; font-size: 0.8em; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .warning {
+            background: #3e2c00; border: 1px solid #6e5000; border-radius: 4px;
+            padding: 10px 14px; margin-bottom: 16px; font-size: 0.85em; color: #cca700;
+        }
+        .info {
+            background: #0e3a5c; border: 1px solid #1177bb; border-radius: 4px;
+            padding: 10px 14px; margin-bottom: 16px; font-size: 0.85em; color: #9cdcfe;
+        }
+        .history { margin-top: 24px; }
+        .history h3 { color: #808080; font-size: 0.85em; margin-bottom: 8px; }
+        .history-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 12px; background: #2d2d2d; border-radius: 4px; margin-bottom: 4px;
+            font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82em; cursor: pointer;
+        }
+        .history-item:hover { background: #383838; }
+        .history-item .name { color: #9cdcfe; }
+        .history-item .time { color: #555; font-size: 0.8em; }
+        .toggle-section {
+            border-top: 1px solid #3c3c3c; margin-top: 16px; padding-top: 16px;
+        }
+        .toggle-header {
+            color: #808080; font-size: 0.85em; cursor: pointer; user-select: none;
+        }
+        .toggle-header:hover { color: #d4d4d4; }
+        .toggle-body { display: none; margin-top: 12px; }
+        .toggle-body.open { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 DiskRP Break ISF</h1>
+        <p class="subtitle">RemoveIncrementalSnapshotFamilyOnDisk — break old snapshot family association</p>
+
+        <div class="warning">
+            ⚠️ Mutating operation — requires SAW with JIT <code>DiskRP-CustomerServiceOperator</code>.
+        </div>
+
+        <div class="info">
+            💡 Only disk name is required. The Python snippet includes Kusto lookup to auto-discover subscription, region, and resource group.
+        </div>
+
+        <div class="card">
+            <label>Disk Name</label>
+            <input type="text" id="diskName" placeholder="e.g. diskrptestodmxtnvmrjjr" autofocus>
+
+            <div class="row">
+                <div class="checkbox-row">
+                    <input type="checkbox" id="skipValidation">
+                    <label for="skipValidation">Skip Validation</label>
+                </div>
+                <div class="checkbox-row">
+                    <input type="checkbox" id="clearBilling">
+                    <label for="clearBilling">Clear Billing</label>
+                </div>
+            </div>
+
+            <div class="toggle-section">
+                <div class="toggle-header" onclick="toggleAdvanced()">
+                    ▶ Advanced — manually specify subscription, region, resource group
+                </div>
+                <div class="toggle-body" id="advancedBody">
+                    <label>Subscription ID</label>
+                    <input type="text" id="subId" placeholder="Auto-discovered via Kusto if left empty">
+                    <div class="row">
+                        <div>
+                            <label>Region (ARM-cased)</label>
+                            <input type="text" id="region" placeholder="e.g. EastUS2EUAP">
+                        </div>
+                        <div>
+                            <label>Resource Group</label>
+                            <input type="text" id="resourceGroup" placeholder="e.g. diskrptestmbgeo">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 16px;">
+                <button class="btn-primary" onclick="generate()">Generate Links</button>
+                <button class="btn-secondary" onclick="clearAll()">Clear</button>
+            </div>
+        </div>
+
+        <div class="output" id="output">
+            <h3>✅ Generated</h3>
+
+            <div id="genevaSection" style="display:none;">
+                <div class="section-label">Geneva Portal Link (all params provided) <button class="btn-copy" onclick="copyEl('genevaLink')">Copy</button></div>
+                <div class="link-box" id="genevaLinkBox"></div>
+            </div>
+
+            <div class="section-label">Python Snippet (for SAW JupyterLite) <button class="btn-copy" onclick="copyEl('pythonSnippetBox')">Copy</button></div>
+            <div class="python-box" id="pythonSnippetBox"></div>
+        </div>
+
+        <div class="history" id="historySection" style="display:none;">
+            <h3>Recent</h3>
+            <div id="historyList"></div>
+        </div>
+    </div>
+
+    <script>
+        const GENEVA_BASE = 'https://portal.microsoftgeneva.com/';
+        const history = JSON.parse(localStorage.getItem('breakIsfHistory') || '[]');
+
+        function toggleAdvanced() {
+            const body = document.getElementById('advancedBody');
+            const header = body.previousElementSibling;
+            body.classList.toggle('open');
+            header.textContent = body.classList.contains('open')
+                ? '▼ Advanced — manually specify subscription, region, resource group'
+                : '▶ Advanced — manually specify subscription, region, resource group';
+        }
+
+        function generate() {
+            const diskName = document.getElementById('diskName').value.trim();
+            if (!diskName) {
+                alert('Please enter a disk name');
+                return;
+            }
+
+            const subId = document.getElementById('subId').value.trim();
+            const region = document.getElementById('region').value.trim();
+            const rg = document.getElementById('resourceGroup').value.trim();
+            const skipValidation = document.getElementById('skipValidation').checked;
+            const clearBilling = document.getElementById('clearBilling').checked;
+
+            const allManual = subId && region && rg;
+
+            // Geneva link only if all params are provided
+            if (allManual) {
+                const params = {
+                    page: 'actions',
+                    acisEndpoint: 'Public',
+                    tab: 'Extensions',
+                    extension: 'Compute Platform Disks',
+                    operationId: 'RemoveIncrementalSnapshotFamilyOnDisk',
+                    inputMode: 'single',
+                    params: JSON.stringify({
+                        wellknownsubscriptionid: subId,
+                        smeregionarmnameparameter: region,
+                        smeresourcegroupnameparameter: rg,
+                        smedisknameparameter: diskName,
+                        smeskipvalidationparameter: String(skipValidation),
+                        smeclearbillingparameter: String(clearBilling),
+                        smeapiversionparameter: ''
+                    }),
+                    actionEndpoint: 'Prod'
+                };
+                const genevaUrl = GENEVA_BASE + '?' + new URLSearchParams(params).toString();
+                document.getElementById('genevaLinkBox').innerHTML =
+                    `<a href="${genevaUrl}" target="_blank" id="genevaLink">${genevaUrl}</a>`;
+                document.getElementById('genevaSection').style.display = 'block';
+            } else {
+                document.getElementById('genevaSection').style.display = 'none';
+            }
+
+            // Python snippet — includes Kusto lookup if params not provided
+            let python;
+            if (allManual) {
+                python = `from xportal import acis
+import json
+
+r = await acis.execute(
+    'Compute Platform Disks',
+    'RemoveIncrementalSnapshotFamilyOnDisk',
+    ['${subId}', '${region}', '${rg}', '${diskName}',
+     '${skipValidation}', '${clearBilling}', ''],
+    endpoint='Prod')
+
+msg = r.get('resultMessage', '') if isinstance(r, dict) else str(r)
+try:
+    print(json.dumps(json.loads(msg), indent=2))
+except Exception:
+    print(msg)`;
+            } else {
+                python = `from xportal import acis, kusto
+import json
+
+disk_name = '${diskName}'
+
+# Step 1: Kusto lookup — find subscription, region, resource group
+print(f'Looking up disk: {disk_name} ...')
+kql = f"""
+DiskManagerApiQoSEvent
+| where PreciseTimeStamp > ago(7d)
+| where resourceName == '{disk_name}'
+| project subscriptionId, region, resourceGroupName
+| take 1
+"""
+rows = await kusto.execute_query(
+    'https://disks.kusto.windows.net', 'disks', kql)
+
+if not rows or len(rows) == 0:
+    raise Exception(f'Disk {disk_name} not found in Kusto. Try providing params manually.')
+
+row = rows[0]
+sub_id = row['subscriptionId']
+region = row['region']
+rg = row['resourceGroupName']
+print(f'Found: sub={sub_id}, region={region}, rg={rg}')
+
+# Step 2: Break ISF
+print(f'Executing RemoveIncrementalSnapshotFamilyOnDisk ...')
+r = await acis.execute(
+    'Compute Platform Disks',
+    'RemoveIncrementalSnapshotFamilyOnDisk',
+    [sub_id, region, rg, disk_name,
+     '${skipValidation}', '${clearBilling}', ''],
+    endpoint='Prod')
+
+msg = r.get('resultMessage', '') if isinstance(r, dict) else str(r)
+try:
+    print(json.dumps(json.loads(msg), indent=2))
+except Exception:
+    print(msg)`;
+            }
+
+            document.getElementById('pythonSnippetBox').textContent = python;
+            document.getElementById('output').style.display = 'block';
+
+            addHistory(diskName, subId, region, rg);
+        }
+
+        function copyEl(id) {
+            let text;
+            if (id === 'genevaLink') {
+                text = document.querySelector('#genevaLinkBox a').href;
+            } else {
+                text = document.getElementById(id).textContent;
+            }
+            navigator.clipboard.writeText(text);
+            event.target.textContent = 'Copied!';
+            setTimeout(() => event.target.textContent = 'Copy', 1500);
+        }
+
+        function addHistory(diskName, subId, region, rg) {
+            const entry = { diskName, subId, region, rg, time: new Date().toLocaleString() };
+            const idx = history.findIndex(h => h.diskName === diskName);
+            if (idx >= 0) history.splice(idx, 1);
+            history.unshift(entry);
+            if (history.length > 10) history.pop();
+            localStorage.setItem('breakIsfHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            if (history.length === 0) {
+                document.getElementById('historySection').style.display = 'none';
+                return;
+            }
+            document.getElementById('historySection').style.display = 'block';
+            document.getElementById('historyList').innerHTML = history.map(h =>
+                `<div class="history-item" onclick="loadHistory('${h.diskName}','${h.subId || ''}','${h.region || ''}','${h.rg || ''}')">
+                    <span class="name">${h.diskName}</span>
+                    <span class="time">${h.time}</span>
+                </div>`
+            ).join('');
+        }
+
+        function loadHistory(diskName, subId, region, rg) {
+            document.getElementById('diskName').value = diskName;
+            document.getElementById('subId').value = subId;
+            document.getElementById('region').value = region;
+            document.getElementById('resourceGroup').value = rg;
+            if (subId || region || rg) {
+                document.getElementById('advancedBody').classList.add('open');
+            }
+            generate();
+        }
+
+        function clearAll() {
+            document.getElementById('diskName').value = '';
+            document.getElementById('subId').value = '';
+            document.getElementById('region').value = '';
+            document.getElementById('resourceGroup').value = '';
+            document.getElementById('skipValidation').checked = false;
+            document.getElementById('clearBilling').checked = false;
+            document.getElementById('output').style.display = 'none';
+        }
+
+        document.addEventListener('keydown', e => { if (e.key === 'Enter') generate(); });
+        renderHistory();
+    </script>
+</body>
+</html>

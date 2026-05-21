@@ -148,30 +148,13 @@
             document.getElementById('output').style.display = 'none';
             document.getElementById('offlineOutput').style.display = 'none';
 
-            // Check if server is available
-            let serverAvailable = false;
-            try {
-                const ping = await fetch(`${API_BASE}/api/lookup?disk=__ping__`, {signal: AbortSignal.timeout(2000)});
-                serverAvailable = true;
-            } catch(e) {}
-
-            if (!serverAvailable) {
-                // Offline mode — generate Python snippet
-                status.innerHTML = '⚡ No local server — generating Python snippet.';
-                status.style.color = '#cca700';
-                btn.disabled = false;
-                btn.textContent = '🔍 Get Disk';
-                showOffline(diskName);
-                return;
-            }
-
-            // Online mode — full backend call
+            // Try server directly (same pattern as break-isf)
             status.innerHTML = '<span class="spinner"></span> Step 1/2: Kusto lookup...';
             status.style.color = '#569cd6';
 
             try {
                 // Quick lookup first for immediate feedback
-                const lookupResp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`);
+                const lookupResp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`, {signal: AbortSignal.timeout(5000)});
                 const lookupData = await lookupResp.json();
 
                 if (!lookupResp.ok) {
@@ -219,8 +202,10 @@
 
                 addHistory(diskName, lookup.subscriptionId, lookup.region, lookup.resourceGroupName);
             } catch (e) {
-                status.textContent = '❌ Error: ' + e.message;
-                status.style.color = '#f44747';
+                // No local server — fall back to Python snippet
+                status.innerHTML = '⚡ No local server — generating Python snippet.';
+                status.style.color = '#cca700';
+                showOffline(diskName);
             } finally {
                 btn.disabled = false;
                 btn.textContent = '🔍 Get Disk';

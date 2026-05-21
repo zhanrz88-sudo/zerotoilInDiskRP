@@ -78,15 +78,6 @@
         .history-item:hover { background: #383838; }
         .history-item .name { color: #9cdcfe; }
         .history-item .time { color: #555; font-size: 0.8em; }
-        .toggle-section {
-            border-top: 1px solid #3c3c3c; margin-top: 16px; padding-top: 16px;
-        }
-        .toggle-header {
-            color: #808080; font-size: 0.85em; cursor: pointer; user-select: none;
-        }
-        .toggle-header:hover { color: #d4d4d4; }
-        .toggle-body { display: none; margin-top: 12px; }
-        .toggle-body.open { display: block; }
     </style>
 </head>
 <body>
@@ -99,7 +90,7 @@
         </div>
 
         <div class="info">
-            💡 Only disk name is required. The Python snippet includes Kusto lookup to auto-discover subscription, region, and resource group.
+            💡 Only disk name is required. Kusto lookup auto-discovers subscription, region, and resource group.
         </div>
 
         <div class="card">
@@ -117,30 +108,11 @@
                 </div>
             </div>
 
-            <div class="toggle-section">
-                <div class="toggle-header" onclick="toggleAdvanced()">
-                    ▶ Advanced — manually specify subscription, region, resource group
-                </div>
-                <div class="toggle-body" id="advancedBody">
-                    <label>Subscription ID</label>
-                    <input type="text" id="subId" placeholder="Auto-discovered via Kusto if left empty">
-                    <div class="row">
-                        <div>
-                            <label>Region (ARM-cased)</label>
-                            <input type="text" id="region" placeholder="e.g. EastUS2EUAP">
-                        </div>
-                        <div>
-                            <label>Resource Group</label>
-                            <input type="text" id="resourceGroup" placeholder="e.g. diskrptestmbgeo">
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div style="margin-top: 16px;">
-                <button class="btn-primary" onclick="generate()">Generate Links</button>
+            <div style="margin-top: 4px;">
+                <button class="btn-primary" id="generateBtn" onclick="generate()">🔍 Lookup &amp; Generate</button>
                 <button class="btn-secondary" onclick="clearAll()">Clear</button>
             </div>
+            <div id="statusMsg" style="margin-top: 10px; font-size: 0.85em; color: #808080;"></div>
         </div>
 
         <div class="output" id="output">
@@ -163,64 +135,75 @@
 
     <script>
         const GENEVA_BASE = 'https://portal.microsoftgeneva.com/';
+        const API_BASE = 'http://localhost:8091';
         const history = JSON.parse(localStorage.getItem('breakIsfHistory') || '[]');
 
-        function toggleAdvanced() {
-            const body = document.getElementById('advancedBody');
-            const header = body.previousElementSibling;
-            body.classList.toggle('open');
-            header.textContent = body.classList.contains('open')
-                ? '▼ Advanced — manually specify subscription, region, resource group'
-                : '▶ Advanced — manually specify subscription, region, resource group';
-        }
-
-        function generate() {
+        async function generate() {
             const diskName = document.getElementById('diskName').value.trim();
-            if (!diskName) {
-                alert('Please enter a disk name');
-                return;
-            }
+            if (!diskName) { alert('Please enter a disk name'); return; }
 
-            const subId = document.getElementById('subId').value.trim();
-            const region = document.getElementById('region').value.trim();
-            const rg = document.getElementById('resourceGroup').value.trim();
             const skipValidation = document.getElementById('skipValidation').checked;
             const clearBilling = document.getElementById('clearBilling').checked;
+            const btn = document.getElementById('generateBtn');
+            const status = document.getElementById('statusMsg');
 
-            const allManual = subId && region && rg;
+            btn.disabled = true;
+            btn.textContent = '⏳ Querying Kusto...';
+            status.textContent = 'Looking up disk in disks.kusto.windows.net ...';
+            status.style.color = '#808080';
+            document.getElementById('output').style.display = 'none';
 
-            // Geneva link only if all params are provided
-            if (allManual) {
-                const params = {
-                    page: 'actions',
-                    acisEndpoint: 'Public',
-                    tab: 'Extensions',
-                    extension: 'Compute Platform Disks',
-                    operationId: 'RemoveIncrementalSnapshotFamilyOnDisk',
-                    inputMode: 'single',
-                    params: JSON.stringify({
-                        wellknownsubscriptionid: subId,
-                        smeregionarmnameparameter: region,
-                        smeresourcegroupnameparameter: rg,
-                        smedisknameparameter: diskName,
-                        smeskipvalidationparameter: String(skipValidation),
-                        smeclearbillingparameter: String(clearBilling),
-                        smeapiversionparameter: ''
-                    }),
-                    actionEndpoint: 'Prod'
-                };
-                const genevaUrl = GENEVA_BASE + '?' + new URLSearchParams(params).toString();
-                document.getElementById('genevaLinkBox').innerHTML =
-                    `<a href="${genevaUrl}" target="_blank" id="genevaLink">${genevaUrl}</a>`;
-                document.getElementById('genevaSection').style.display = 'block';
-            } else {
-                document.getElementById('genevaSection').style.display = 'none';
+            try {
+                const resp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`);
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    status.textContent = '❌ ' + (data.error || 'Lookup failed');
+                    status.style.color = '#f44747';
+                    return;
+                }
+
+                const subId = data.subscriptionId;
+                const region = data.region;
+                const rg = data.resourceGroupName;
+
+                status.innerHTML = `✅ Found: sub=<span style="color:#9cdcfe">${subId}</span>, region=<span style="color:#4ec9b0">${region}</span>, rg=<span style="color:#dcdcaa">${rg}</span>`;
+                status.style.color = '#6a9955';
+
+                showResults(subId, region, rg, diskName, skipValidation, clearBilling);
+                addHistory(diskName, subId, region, rg);
+            } catch (e) {
+                status.textContent = '❌ Cannot reach local server. Run: python tools/break_isf_server.py';
+                status.style.color = '#f44747';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔍 Lookup & Generate';
             }
+        }
 
-            // Python snippet — includes Kusto lookup if params not provided
-            let python;
-            if (allManual) {
-                python = `from xportal import acis
+        function showResults(subId, region, rg, diskName, skipValidation, clearBilling) {
+            // Geneva link
+            const params = {
+                page: 'actions',
+                acisEndpoint: 'Public',
+                tab: 'Extensions',
+                extension: 'Compute Platform Disks',
+                operationId: 'RemoveIncrementalSnapshotFamilyOnDisk',
+                inputMode: 'single',
+                params: JSON.stringify({
+                    wellknownsubscriptionid: subId,
+                    smeregionarmnameparameter: region,
+                    smeresourcegroupnameparameter: rg,
+                    smedisknameparameter: diskName,
+                    smeskipvalidationparameter: String(skipValidation),
+                    smeclearbillingparameter: String(clearBilling),
+                    smeapiversionparameter: ''
+                }),
+                actionEndpoint: 'Prod'
+            };
+            const genevaUrl = GENEVA_BASE + '?' + new URLSearchParams(params).toString();
+
+            const python = `from xportal import acis
 import json
 
 r = await acis.execute(
@@ -235,53 +218,12 @@ try:
     print(json.dumps(json.loads(msg), indent=2))
 except Exception:
     print(msg)`;
-            } else {
-                python = `from xportal import acis, kusto
-import json
 
-disk_name = '${diskName}'
-
-# Step 1: Kusto lookup — find subscription, region, resource group
-print(f'Looking up disk: {disk_name} ...')
-kql = f"""
-DiskManagerApiQoSEvent
-| where PreciseTimeStamp > ago(7d)
-| where resourceName == '{disk_name}'
-| project subscriptionId, region, resourceGroupName
-| take 1
-"""
-rows = await kusto.execute_query(
-    'https://disks.kusto.windows.net', 'disks', kql)
-
-if not rows or len(rows) == 0:
-    raise Exception(f'Disk {disk_name} not found in Kusto. Try providing params manually.')
-
-row = rows[0]
-sub_id = row['subscriptionId']
-region = row['region']
-rg = row['resourceGroupName']
-print(f'Found: sub={sub_id}, region={region}, rg={rg}')
-
-# Step 2: Break ISF
-print(f'Executing RemoveIncrementalSnapshotFamilyOnDisk ...')
-r = await acis.execute(
-    'Compute Platform Disks',
-    'RemoveIncrementalSnapshotFamilyOnDisk',
-    [sub_id, region, rg, disk_name,
-     '${skipValidation}', '${clearBilling}', ''],
-    endpoint='Prod')
-
-msg = r.get('resultMessage', '') if isinstance(r, dict) else str(r)
-try:
-    print(json.dumps(json.loads(msg), indent=2))
-except Exception:
-    print(msg)`;
-            }
-
+            document.getElementById('genevaLinkBox').innerHTML =
+                `<a href="${genevaUrl}" target="_blank" id="genevaLink">${genevaUrl}</a>`;
+            document.getElementById('genevaSection').style.display = 'block';
             document.getElementById('pythonSnippetBox').textContent = python;
             document.getElementById('output').style.display = 'block';
-
-            addHistory(diskName, subId, region, rg);
         }
 
         function copyEl(id) {
@@ -313,32 +255,27 @@ except Exception:
             }
             document.getElementById('historySection').style.display = 'block';
             document.getElementById('historyList').innerHTML = history.map(h =>
-                `<div class="history-item" onclick="loadHistory('${h.diskName}','${h.subId || ''}','${h.region || ''}','${h.rg || ''}')">
+                `<div class="history-item" onclick="loadFromHistory('${h.diskName}','${h.subId}','${h.region}','${h.rg}',${JSON.stringify(h.skipValidation||false)},${JSON.stringify(h.clearBilling||false)})">
                     <span class="name">${h.diskName}</span>
-                    <span class="time">${h.time}</span>
+                    <span class="time">${h.rg} · ${h.time}</span>
                 </div>`
             ).join('');
         }
 
-        function loadHistory(diskName, subId, region, rg) {
+        function loadFromHistory(diskName, subId, region, rg) {
             document.getElementById('diskName').value = diskName;
-            document.getElementById('subId').value = subId;
-            document.getElementById('region').value = region;
-            document.getElementById('resourceGroup').value = rg;
-            if (subId || region || rg) {
-                document.getElementById('advancedBody').classList.add('open');
-            }
-            generate();
+            showResults(subId, region, rg, diskName, false, false);
+            document.getElementById('statusMsg').innerHTML =
+                `✅ From history: sub=<span style="color:#9cdcfe">${subId}</span>, region=<span style="color:#4ec9b0">${region}</span>, rg=<span style="color:#dcdcaa">${rg}</span>`;
+            document.getElementById('statusMsg').style.color = '#6a9955';
         }
 
         function clearAll() {
             document.getElementById('diskName').value = '';
-            document.getElementById('subId').value = '';
-            document.getElementById('region').value = '';
-            document.getElementById('resourceGroup').value = '';
             document.getElementById('skipValidation').checked = false;
             document.getElementById('clearBilling').checked = false;
             document.getElementById('output').style.display = 'none';
+            document.getElementById('statusMsg').textContent = '';
         }
 
         document.addEventListener('keydown', e => { if (e.key === 'Enter') generate(); });

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DiskRP Tools</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e1e; color: #d4d4d4;
+            display: flex; justify-content: center; align-items: flex-start;
+            min-height: 100vh; padding: 60px 20px;
+        }
+        .container { max-width: 600px; width: 100%; }
+        h1 { color: #569cd6; margin-bottom: 8px; font-size: 1.8em; }
+        .subtitle { color: #808080; margin-bottom: 32px; }
+        .tool-card {
+            background: #252526; border: 1px solid #3c3c3c; border-radius: 8px;
+            padding: 20px 24px; margin-bottom: 12px; cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            text-decoration: none; display: block;
+        }
+        .tool-card:hover { border-color: #569cd6; background: #2a2a2a; }
+        .tool-card h2 { color: #4ec9b0; font-size: 1.1em; margin-bottom: 6px; }
+        .tool-card p { color: #808080; font-size: 0.9em; line-height: 1.4; }
+        .tag {
+            display: inline-block; font-size: 0.75em; padding: 2px 8px;
+            border-radius: 3px; margin-right: 6px; margin-top: 8px;
+        }
+        .tag-read { background: #2d7d46; color: white; }
+        .tag-mutating { background: #b5200d; color: white; }
+        .tag-saw { background: #6e5000; color: #cca700; }
+        .tag-static { background: #0e639c; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛠️ DiskRP Tools</h1>
+        <p class="subtitle">On-call toolbox for DiskRP operations</p>
+
+        <a class="tool-card" href="tools/approve-feature.html">
+            <h2>🔑 Approve Feature</h2>
+            <p>Generate SAW links for ApproveFeatureRegistration (SnapshotImmutabilityPolicyPreview etc.)</p>
+            <span class="tag tag-mutating">Mutating</span>
+            <span class="tag tag-saw">SAW Required</span>
+            <span class="tag tag-static">Works Online</span>
+        </a>
+
+        <a class="tool-card" href="tools/break-isf.html">
+            <h2>🔗 Break ISF</h2>
+            <p>RemoveIncrementalSnapshotFamilyOnDisk — enter disk name, auto-lookup via Kusto, get SAW links</p>
+            <span class="tag tag-mutating">Mutating</span>
+            <span class="tag tag-saw">SAW Required</span>
+            <span class="tag tag-static">Works Online</span>
+        </a>
+    </div>
+</body>
+</html>

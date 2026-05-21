@@ -154,7 +154,7 @@
             document.getElementById('output').style.display = 'none';
 
             try {
-                const resp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`);
+                const resp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`, {signal: AbortSignal.timeout(3000)});
                 const data = await resp.json();
 
                 if (!resp.ok) {
@@ -173,8 +173,10 @@
                 showResults(subId, region, rg, diskName, skipValidation, clearBilling);
                 addHistory(diskName, subId, region, rg);
             } catch (e) {
-                status.textContent = '❌ Cannot reach local server. Run: python tools/break_isf_server.py';
-                status.style.color = '#f44747';
+                // No local server — generate self-contained Python snippet with Kusto lookup
+                status.innerHTML = '⚡ No local server — generating self-contained Python snippet with Kusto lookup built in.';
+                status.style.color = '#cca700';
+                showOfflineResults(diskName, skipValidation, clearBilling);
             } finally {
                 btn.disabled = false;
                 btn.textContent = '🔍 Lookup & Generate';
@@ -222,6 +224,52 @@ except Exception:
             document.getElementById('genevaLinkBox').innerHTML =
                 `<a href="${genevaUrl}" target="_blank" id="genevaLink">${genevaUrl}</a>`;
             document.getElementById('genevaSection').style.display = 'block';
+            document.getElementById('pythonSnippetBox').textContent = python;
+            document.getElementById('output').style.display = 'block';
+        }
+
+        function showOfflineResults(diskName, skipValidation, clearBilling) {
+            const python = `from xportal import acis
+from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+import json
+
+disk_name = '${diskName}'
+
+# Step 1: Kusto lookup
+print(f'Looking up disk: {disk_name} ...')
+kcs = KustoConnectionStringBuilder.with_az_cli_authentication('https://disks.kusto.windows.net')
+client = KustoClient(kcs)
+kql = f"""DiskManagerApiQoSEvent
+| where PreciseTimeStamp > ago(7d)
+| where resourceName == '{disk_name}'
+| project subscriptionId, region, resourceGroupName
+| take 1"""
+resp = client.execute('disks', kql)
+rows = [r for r in resp.primary_results[0]]
+if not rows:
+    raise Exception(f'Disk {disk_name} not found in Kusto')
+
+sub_id = str(rows[0]['subscriptionId'])
+region = str(rows[0]['region'])
+rg = str(rows[0]['resourceGroupName'])
+print(f'Found: sub={sub_id}, region={region}, rg={rg}')
+
+# Step 2: Break ISF
+print('Executing RemoveIncrementalSnapshotFamilyOnDisk ...')
+r = await acis.execute(
+    'Compute Platform Disks',
+    'RemoveIncrementalSnapshotFamilyOnDisk',
+    [sub_id, region, rg, disk_name,
+     '${skipValidation}', '${clearBilling}', ''],
+    endpoint='Prod')
+
+msg = r.get('resultMessage', '') if isinstance(r, dict) else str(r)
+try:
+    print(json.dumps(json.loads(msg), indent=2))
+except Exception:
+    print(msg)`;
+
+            document.getElementById('genevaSection').style.display = 'none';
             document.getElementById('pythonSnippetBox').textContent = python;
             document.getElementById('output').style.display = 'block';
         }

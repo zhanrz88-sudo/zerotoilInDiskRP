@@ -269,6 +269,24 @@ All are read-only `PlatformServiceViewer` claims. Verified 2026-05-20 via job `9
 
 **Mutating ops require:** `DiskRP-CustomerServiceOperator` or `DiskRP-CustomerServiceAdministrator` (granted via JIT on SAW).
 
+### ApproveFeatureRegistration Required Claims
+
+This operation uses `Azure Resource Manager` extension (not `Compute Platform Disks`) and requires one of these `*-PlatformServiceOperator` or `*-PlatformServiceAdministrator` claims (verified 2026-05-21 via job `b141609c`):
+
+| Operator Claims | Administrator Claims |
+|---|---|
+| `CRP-PlatformServiceOperator` | `CRP-PlatformServiceAdministrator` |
+| `CloudServicesExtendedSupport-PlatformServiceOperator` | `CloudServicesExtendedSupport-PlatformServiceAdministrator` |
+| `PIR-PlatformServiceOperator` | `PIR-PlatformServiceAdministrator` |
+| `CDRP-PlatformServiceOperator` | `CDRP-PlatformServiceAdministrator` |
+| `DiskRP-PlatformServiceOperator` | `DiskRP-PlatformServiceAdministrator` |
+| `CPlatAFEC-PlatformServiceOperator` | `CPlatAFEC-PlatformServiceAdministrator` |
+| | `AFECAutomation-PlatformServiceAdministrator` |
+| | `AFECLionrock-PlatformServiceAdministrator` |
+| | `SPARTA-PlatformServiceAdministrator` |
+
+The backend worker has **none** of these — it only has `*-PlatformServiceViewer` claims. Feature approvals must be done on SAW with JIT.
+
 ## Backend Job Reports
 
 | Job ID | What | Result | Date |

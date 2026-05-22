@@ -154,7 +154,7 @@
 
             try {
                 // Quick lookup first for immediate feedback
-                const lookupResp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`, {signal: AbortSignal.timeout(5000)});
+                const lookupResp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`, {signal: AbortSignal.timeout(15000)});
                 const lookupData = await lookupResp.json();
 
                 if (!lookupResp.ok) {

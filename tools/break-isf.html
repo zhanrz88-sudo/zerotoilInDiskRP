@@ -154,7 +154,7 @@
             document.getElementById('output').style.display = 'none';
 
             try {
-                const resp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`, {signal: AbortSignal.timeout(3000)});
+                const resp = await fetch(`${API_BASE}/api/lookup?disk=${encodeURIComponent(diskName)}`, {signal: AbortSignal.timeout(15000)});
                 const data = await resp.json();
 
                 if (!resp.ok) {
